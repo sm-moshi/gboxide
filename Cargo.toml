@@ -1,0 +1,11 @@
+[workspace]
+members  = ["core", "cli", "common", "tests"]
+resolver = "2"
+
+[workspace.package]
+edition       = "2021"
+rust-version  = "1.75.0"
+license       = "MIT OR Apache-2.0"
+repository    = "https://github.com/sm-moshi/gboxide"
+homepage      = "https://github.com/sm-moshi/gboxide"
+documentation = "https://docs.rs/gboxide"
