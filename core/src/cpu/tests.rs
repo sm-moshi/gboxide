@@ -3,7 +3,7 @@ use crate::cpu::CPU;
 use crate::mmu::MMU;
 
 #[cfg(test)]
-use pretty_assertions::{assert_eq, assert_ne};
+use pretty_assertions::assert_eq;
 
 #[test]
 fn test_ld_b_immediate() {
