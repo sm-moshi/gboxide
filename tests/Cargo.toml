@@ -1,0 +1,8 @@
+[package]
+name    = "tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+core              = { path = "../core" }
+pretty_assertions = "1.4"
