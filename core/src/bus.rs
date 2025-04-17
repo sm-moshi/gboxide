@@ -1,7 +1,10 @@
 /// Memory interface abstraction between CPU and memory/IO
+// core/src/bus.rs
+
 use crate::mmu::MMU;
 
-pub trait Bus {
+/// Trait for memory access abstraction across the system
+pub trait MemoryBusTrait {
     fn read8(&mut self, addr: u16) -> u8;
     fn write8(&mut self, addr: u16, value: u8);
 
@@ -19,17 +22,18 @@ pub trait Bus {
     }
 }
 
-pub struct BusAdapter<'a> {
+/// Implementation of MemoryBusTrait that wraps around the MMU
+pub struct MemoryBusImpl<'a> {
     pub mmu: &'a mut MMU,
 }
 
-impl<'a> BusAdapter<'a> {
+impl<'a> MemoryBusImpl<'a> {
     pub fn new(mmu: &'a mut MMU) -> Self {
         Self { mmu }
     }
 }
 
-impl<'a> Bus for BusAdapter<'a> {
+impl<'a> MemoryBusTrait for MemoryBusImpl<'a> {
     fn read8(&mut self, addr: u16) -> u8 {
         self.mmu.read(addr)
     }
