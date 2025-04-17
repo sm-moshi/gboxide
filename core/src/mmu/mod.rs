@@ -68,12 +68,13 @@ impl MMU {
     }
 }
 
+// Correct trait implementation
 impl MemoryBus for MMU {
-    fn read_byte(&self, addr: u16) -> u8 {
+    fn read8(&mut self, addr: u16) -> u8 {
         self.read(addr)
     }
 
-    fn write_byte(&mut self, addr: u16, value: u8) {
+    fn write8(&mut self, addr: u16, value: u8) {
         self.write(addr, value);
     }
 }
