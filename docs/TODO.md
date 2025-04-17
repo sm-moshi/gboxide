@@ -18,7 +18,7 @@
   - [x] Bit manipulation (CB prefix)
   - [ ] Memory banking operations
 - [ ] Add timing-accurate instruction execution
-- [ ] Implement MMU with banking support
+- [x] Implement MMU with banking support
 - [ ] Implement DMA and HDMA transfers
 - [ ] Add interrupt handling
 - [ ] Build test harness for CPU (blargg test ROMs)
