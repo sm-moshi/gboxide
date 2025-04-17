@@ -1,4 +1,4 @@
-use crate::bus::MemoryBus;
+use crate::bus::MemoryBusTrait;
 mod opcodes;
 pub use opcodes::OPCODES;
 
@@ -87,7 +87,7 @@ impl CPU {
         }
     }
 
-    pub fn step(&mut self, bus: &mut dyn MemoryBus) -> u8 {
+    pub fn step(&mut self, bus: &mut dyn MemoryBusTrait) -> u8 {
         let opcode = bus.read(self.regs.pc);
         self.regs.pc = self.regs.pc.wrapping_add(1);
         let op = &OPCODES[opcode as usize];
@@ -95,7 +95,7 @@ impl CPU {
         op.cycles
     }
 
-    pub fn execute(&mut self, opcode: u8, bus: &mut dyn MemoryBus) {
+    pub fn execute(&mut self, opcode: u8, bus: &mut dyn MemoryBusTrait) {
         (opcodes::OPCODES[opcode as usize].exec)(self, bus)
     }
 }
