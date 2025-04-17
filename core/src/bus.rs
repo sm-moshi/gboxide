@@ -1,13 +1,6 @@
 /// Memory interface abstraction between CPU and memory/IO
 use crate::mmu::MMU;
 
-pub trait Bus {
-    fn read8(&mut self, addr: u16) -> u8;
-    fn write8(&mut self, addr: u16, value: u8);
-    fn read16(&mut self, addr: u16) -> u16;
-    fn write16(&mut self, addr: u16, value: u16);
-}
-
 pub struct MemoryBus<'a> {
     pub mmu: &'a mut MMU,
 }
