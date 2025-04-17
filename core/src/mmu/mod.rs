@@ -1,4 +1,4 @@
-use crate::bus::MemoryBusTrait;
+use crate::bus::Bus;
 
 pub struct MMU {
     rom: Vec<u8>,
@@ -11,8 +11,8 @@ pub struct MMU {
 impl MMU {
     pub fn new() -> Self {
         Self {
-            rom: vec![0; 0x8000], // Default 32KB ROM
-            ram: vec![0; 0x8000], // Up to 32KB external RAM
+            rom: vec![0; 0x8000],
+            ram: vec![0; 0x8000],
             rom_bank: 1,
             ram_bank: 0,
             ram_enabled: false,
@@ -55,7 +55,7 @@ impl MMU {
                 self.ram_bank = (value as usize) & 0x03;
             }
             0x6000..=0x7FFF => {
-                // Banking mode switch (ignored for now)
+                // Banking mode switch (ignored)
             }
             0xA000..=0xBFFF => {
                 if self.ram_enabled {
@@ -68,12 +68,12 @@ impl MMU {
     }
 }
 
-impl MemoryBusTrait for MMU {
+impl Bus for MMU {
     fn read8(&mut self, addr: u16) -> u8 {
         self.read(addr)
     }
 
     fn write8(&mut self, addr: u16, value: u8) {
-        self.write(addr, value);
+        self.write(addr, value)
     }
 }
