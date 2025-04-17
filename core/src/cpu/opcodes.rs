@@ -1,4 +1,4 @@
-use crate::{bus::MemoryBus, cpu::CPU};
+use crate::{bus::MemoryBusTrait, cpu::CPU};
 use once_cell::sync::Lazy;
 use paste::paste;
 
@@ -6,7 +6,7 @@ use paste::paste;
 pub struct Opcode {
     pub mnemonic: &'static str,
     pub cycles: u8,
-    pub exec: fn(&mut CPU, &mut dyn MemoryBus),
+    pub exec: fn(&mut CPU, &mut dyn MemoryBusTrait),
 }
 
 macro_rules! alu_add {
@@ -440,7 +440,7 @@ macro_rules! ret_cc {
     };
 }
 
-fn rst_00(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
+fn rst_00(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
@@ -448,7 +448,7 @@ fn rst_00(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
     cpu.regs.pc = 0x00;
 }
 
-fn rst_08(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
+fn rst_08(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
@@ -456,7 +456,7 @@ fn rst_08(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
     cpu.regs.pc = 0x08;
 }
 
-fn rst_10(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
+fn rst_10(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
@@ -464,7 +464,7 @@ fn rst_10(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
     cpu.regs.pc = 0x10;
 }
 
-fn rst_18(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
+fn rst_18(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
@@ -472,7 +472,7 @@ fn rst_18(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
     cpu.regs.pc = 0x18;
 }
 
-fn rst_20(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
+fn rst_20(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
@@ -480,7 +480,7 @@ fn rst_20(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
     cpu.regs.pc = 0x20;
 }
 
-fn rst_28(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
+fn rst_28(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
@@ -488,7 +488,7 @@ fn rst_28(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
     cpu.regs.pc = 0x28;
 }
 
-fn rst_30(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
+fn rst_30(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
@@ -496,7 +496,7 @@ fn rst_30(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
     cpu.regs.pc = 0x30;
 }
 
-fn rst_38(cpu: &mut CPU, bus: &mut dyn MemoryBus) {
+fn rst_38(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
@@ -509,7 +509,7 @@ macro_rules! generate_bit_ops_for_reg {
         paste::paste! {
             // BIT n,r operations (base 0x40)
             {
-                const fn bit_op<const BIT: u8>(cpu: &mut CPU, _: &mut dyn MemoryBus) {
+                const fn bit_op<const BIT: u8>(cpu: &mut CPU, _: &mut dyn MemoryBusTrait) {
                     let mask = 1 << BIT;
                     let value = cpu.regs.$reg;
                     cpu.regs.f = (cpu.regs.f & 0x10) | 0x20;
@@ -538,7 +538,7 @@ macro_rules! generate_bit_ops_for_reg {
 
             // RES n,r operations (base 0x80)
             {
-                const fn res_op<const BIT: u8>(cpu: &mut CPU, _: &mut dyn MemoryBus) {
+                const fn res_op<const BIT: u8>(cpu: &mut CPU, _: &mut dyn MemoryBusTrait) {
                     let mask = !(1 << BIT);
                     cpu.regs.$reg &= mask;
                 }
@@ -565,7 +565,7 @@ macro_rules! generate_bit_ops_for_reg {
 
             // SET n,r operations (base 0xC0)
             {
-                const fn set_op<const BIT: u8>(cpu: &mut CPU, _: &mut dyn MemoryBus) {
+                const fn set_op<const BIT: u8>(cpu: &mut CPU, _: &mut dyn MemoryBusTrait) {
                     let mask = 1 << BIT;
                     cpu.regs.$reg |= mask;
                 }
