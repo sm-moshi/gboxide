@@ -1,4 +1,4 @@
-use crate::bus::MemoryBus;
+use crate::bus::MemoryBusTrait;
 
 pub struct MMU {
     rom: Vec<u8>,
@@ -68,8 +68,7 @@ impl MMU {
     }
 }
 
-// Correct trait implementation
-impl MemoryBus for MMU {
+impl MemoryBusTrait for MMU {
     fn read8(&mut self, addr: u16) -> u8 {
         self.read(addr)
     }
