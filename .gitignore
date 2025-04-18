@@ -20,3 +20,4 @@ target/
 *.sav
 *.gb
 *.gbc
+test-roms/

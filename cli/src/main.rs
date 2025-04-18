@@ -1,30 +1,34 @@
-use core::{MemoryBus, CPU, MMU};
+/// cli/src/main.rs
+use core_lib::{
+    cartridge::Cartridge,
+    cpu::CPU,
+    mmu::{MemoryBusTrait, MMU},
+};
+use std::{fs, path::PathBuf};
 
-fn main() {
-    // Set up MMU and inject test program
-    let mut mmu = MMU::new();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let rom_path = PathBuf::from("roms/test.gb");
+    let rom_data = fs::read(&rom_path)?;
 
-    // Program: NOP (0x00), NOP (0x00), HALT (0x76)
-    mmu.write(0x0100, 0x00);
-    mmu.write(0x0101, 0x00);
-    mmu.write(0x0102, 0x76);
-
-    // Set up CPU and set initial PC to 0x0100 (Game Boy entry point)
+    // Create cartridge and MMU
+    let mut mmu = MMU::new(rom_data)?;
     let mut cpu = CPU::new();
-    cpu.regs.pc = 0x0100;
 
-    // Execute 3 instructions
-    for _ in 0..3 {
+    // Write a simple test program (NOP, NOP, HALT)
+    mmu.write(0x0100, 0x00); // NOP
+    mmu.write(0x0101, 0x00); // NOP
+    mmu.write(0x0102, 0x76); // HALT
+
+    // Main emulation loop
+    loop {
         let opcode = mmu.read(cpu.regs.pc);
-        println!(
-            "Executing opcode: 0x{:02X} at PC=0x{:04X}",
-            opcode, cpu.regs.pc
-        );
-        let cycles = cpu.step(&mut mmu);
-        println!("-> Took {} cycles", cycles);
-        if cpu.halted {
-            println!("CPU entered HALT state.");
+        if opcode == 0x76 {
+            // HALT instruction
             break;
         }
+        let cycles = cpu.step(&mut mmu);
+        mmu.step(u32::from(cycles));
     }
+
+    Ok(())
 }

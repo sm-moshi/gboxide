@@ -1,5 +1,5 @@
 [workspace]
-members  = ["core", "cli", "common", "tests"]
+members  = ["core-lib", "cli", "common", "tests"] # "gui",
 resolver = "2"
 
 [workspace.package]
@@ -10,16 +10,61 @@ repository    = "https://github.com/sm-moshi/gboxide"
 homepage      = "https://github.com/sm-moshi/gboxide"
 documentation = "https://docs.rs/gboxide"
 
+
+[workspace.dependencies]
+core-lib = { path = "core-lib" }
+common   = { path = "common" }
+
+tokio = { version = "1.44.2", features = ["rt-multi-thread", "macros", "time"] }
+
+wgpu     = "25.0.0"
+image    = "0.25.6"
+bytemuck = { version = "1.22", features = ["derive"] }
+
+dioxus         = { version = "0.6.3", features = ["desktop", "router"] }
+dioxus-desktop = "0.6.3"
+
+tracing            = "0.1.41"
+tracing-subscriber = "0.3.19"
+tracing-log        = "0.2.0"
+log                = "0.4.27"
+
+anyhow    = "1.0.98"
+thiserror = "2.0.12"
+bitflags  = "2.9.0"
+
+pretty_assertions = "1.4"
+insta             = { version = "1.42.2", features = ["redactions", "yaml"] }
+
+serde      = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+
+getrandom    = { version = "0.3.2", features = ["js"] }
+js-sys       = "0.3.77"
+wasm-bindgen = "0.2.100"
+
 [profile.dev]
-opt-level = 0
-debug     = true
+opt-level        = 1
+debug            = true
+overflow-checks  = true
+lto              = false
+debug-assertions = true
+incremental      = true
 
 [profile.release]
-opt-level   = 3
-incremental = false
-strip       = true
-debug       = false
-lto         = true
+opt-level     = "z"         # size-optimized; use "3" for performance
+lto           = true
+codegen-units = 1
+debug         = false
+panic         = "abort"
+strip         = "debuginfo"
+
+[profile.release-wasm]
+inherits  = "release"
+opt-level = "z"
+lto       = true
+panic     = "abort"
+strip     = "symbols"
 
 [workspace.lints.clippy]
 # Allowed lints (temporarily noisy false positives)

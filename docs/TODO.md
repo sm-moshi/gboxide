@@ -1,58 +1,115 @@
-# TODO
+# TODO List
 
-## Core
+## High Priority
 
-- [x] Basic CPU instruction set implementation
-  - [x] ALU operations (ADD, SUB, AND, XOR, OR, CP)
-  - [x] Register loads (LD r,n)
-  - [x] HALT instruction
-  - [x] Flag handling for basic operations
-  - [x] Bit operations (BIT, RES, SET)
-  - [x] Rotation and shift operations
-- [ ] Complete CPU opcode map
-  - [x] ALU operations with registers
-  - [x] Register-to-register transfers
-  - [x] Stack operations (PUSH, POP)
-  - [x] Jump and call instructions
-  - [x] RST operations
-  - [x] Bit manipulation (CB prefix)
-  - [ ] Memory banking operations
-- [ ] Add timing-accurate instruction execution
-- [x] Implement MMU with banking support
-- [ ] Implement DMA and HDMA transfers
-- [ ] Add interrupt handling
-- [ ] Build test harness for CPU (blargg test ROMs)
+- [x] Complete interrupt handling system
+  - [x] Implement basic interrupt structure
+  - [x] Add interrupt flags
+  - [x] Implement interrupt vectors
+  - [x] Add timing for interrupt handling
+  - [x] Test interrupt behaviour
 
-## PPU
+- [x] Enhance MMU implementation
+  - [x] Basic memory access
+  - [x] Memory bus trait
+  - [x] Complete banking system
+  - [x] Memory protection
+  - [x] Test memory timing
+  - [x] Echo RAM support
+  - [x] OAM access
+  - [ ] Implement DMA
 
-- [ ] Implement background rendering
-- [ ] Add sprite rendering and priority handling
-- [ ] Support CGB palettes and tile attributes
+- [~] Timer System Completion
+  - [x] Basic timer registers
+  - [x] Cycle counting
+  - [x] DIV register implementation
+  - [x] TIMA counter with overflow
+  - [x] TMA modulo register
+  - [x] TAC control register
+  - [x] Four frequency modes
+  - [x] Timer overflow delay
+  - [x] DIV reset functionality
+  - [x] TAC change handling
+  - [x] Interrupt requests
+  - [ ] Fix timer increment overflow test
+  - [ ] Add additional edge case tests
+  - [ ] Complete timing accuracy verification
 
-## APU
+- [ ] Begin PPU implementation
+  - [ ] Set up VRAM structure
+  - [ ] Implement tile data reading
+  - [ ] Add background rendering
+  - [ ] Basic sprite support
+  - [ ] Test PPU timing
 
-- [ ] Add APU channel emulation
-- [ ] Integrate audio output (via `cpal`)
+## Medium Priority
 
-## CLI
+- [~] Improve test coverage
+  - [ ] Add blargg test ROMs
+  - [ ] Implement mooneye-gb tests
+  - [x] Add memory access tests
+  - [x] Add basic timer tests
+  - [x] Add timer frequency tests
+  - [x] Add timer overflow tests
+  - [x] Add DIV reset tests
+  - [x] Add TAC change tests
+  - [x] Add banking tests
+  - [ ] Test CPU timing accuracy
 
-- [x] Basic project structure
-- [x] Build configuration
-  - [x] Development profile (debug, opt-level 1)
-  - [x] Release profile (LTO, stripped, opt-level 3)
-- [ ] ROM loading via command line
-- [ ] Add --debug flag for CPU trace
-- [ ] Add cycle benchmarking for emulation loop
+- [ ] Enhance debugging capabilities
+  - [ ] Add instruction stepping
+  - [ ] Implement breakpoints
+  - [ ] Add memory viewer
+  - [ ] Add register display
 
-## UX
+- [ ] CLI improvements
+  - [x] Basic ROM loading
+  - [x] Memory bank support
+  - [x] Debug output
+  - [ ] Save state support
+  - [ ] Debug commands
+  - [ ] Performance profiling
 
-- [ ] Key mapping and input config
-- [ ] Frame limiter
+## Low Priority
 
-## Debug
+- [~] Documentation
+  - [x] Add architecture overview
+  - [x] Document memory map
+  - [x] Document timer system
+  - [ ] Add contribution guide
+  - [ ] Update README
 
-- [x] Basic test infrastructure
+- [~] Build system
+  - [x] Basic cargo workspace
+  - [x] Test infrastructure
+  - [x] Development profiles
+  - [ ] Cross-platform testing
+  - [ ] CI/CD pipeline
+  - [ ] Release automation
+
+## Completed ✅
+
+- [x] Project structure setup
+- [x] Basic CPU implementation
+- [x] Initial MMU structure
+- [x] Basic CLI frontend
+- [x] Test infrastructure
 - [x] Flag handling verification
-- [ ] Add disassembler/debugger module
-- [ ] Toggle debug UI via feature flag
-- [ ] Expand test coverage for CPU instructions
+- [x] Memory access testing
+- [x] Echo RAM implementation
+- [x] OAM access support
+- [x] Memory bank controller support
+- [x] Basic timer implementation
+- [x] Development environment setup
+- [x] Build profile optimization
+
+## Notes
+
+- Fix timer increment overflow test as top priority
+- Add more comprehensive timer edge case tests
+- Verify timer interrupt timing accuracy
+- Begin PPU implementation after timer system is stable
+- Maintain test coverage as features are added
+- Document timer system behaviour and edge cases
+- Verify interrupt timing edge cases
+- Add more comprehensive interrupt tests

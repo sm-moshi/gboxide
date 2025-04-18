@@ -1,23 +1,54 @@
-use crate::{bus::MemoryBusTrait, cpu::CPU};
+/// core-lib/src/cpu/opcodes.rs
+use super::CPU;
+use crate::mmu::MemoryBusTrait;
 use once_cell::sync::Lazy;
-use paste::paste;
+use pastey::paste;
 
-#[derive(Copy, Clone)]
+const REG_INDICES: [(char, usize); 7] = [
+    ('b', 0),
+    ('c', 1),
+    ('d', 2),
+    ('e', 3),
+    ('h', 4),
+    ('l', 5),
+    ('a', 7),
+];
+
+fn reg_to_index(reg: &str) -> usize {
+    let reg_char = reg.chars().next().unwrap();
+    REG_INDICES
+        .iter()
+        .find(|(c, _)| *c == reg_char)
+        .map(|(_, idx)| *idx)
+        .unwrap_or_else(|| panic!("Invalid register"))
+}
+
 pub struct Opcode {
     pub mnemonic: &'static str,
-    pub cycles: u8,
-    pub exec: fn(&mut CPU, &mut dyn MemoryBusTrait),
+    pub base_cycles: u32,        // Includes fetch cycles
+    pub conditional_cycles: u32, // Additional cycles for conditional instructions
+    pub exec: fn(&mut CPU, &mut dyn MemoryBusTrait) -> bool, // Returns true if condition met
+}
+
+impl Copy for Opcode {}
+impl Clone for Opcode {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 macro_rules! alu_add {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("ADD A, ", stringify!($reg)),
-            cycles: 4,
+            base_cycles: 4,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 let lhs = cpu.regs.a;
                 let rhs = cpu.regs.$reg;
+                println!("ADD A,B: A = {:#04x}, B = {:#04x}", lhs, rhs);
                 let result = lhs.wrapping_add(rhs);
+                println!("ADD A,B: Result = {:#04x}", result);
                 cpu.regs.f = 0;
                 if result == 0 {
                     cpu.regs.f |= 0x80;
@@ -29,6 +60,8 @@ macro_rules! alu_add {
                     cpu.regs.f |= 0x10;
                 } // C
                 cpu.regs.a = result;
+                println!("ADD A,B: Final A = {:#04x}", cpu.regs.a);
+                false
             },
         };
     };
@@ -38,7 +71,8 @@ macro_rules! alu_sub {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("SUB ", stringify!($reg)),
-            cycles: 4,
+            base_cycles: 4,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 let lhs = cpu.regs.a;
                 let rhs = cpu.regs.$reg;
@@ -54,6 +88,7 @@ macro_rules! alu_sub {
                     cpu.regs.f |= 0x10;
                 } // C
                 cpu.regs.a = result;
+                false
             },
         };
     };
@@ -63,13 +98,15 @@ macro_rules! alu_and {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("AND ", stringify!($reg)),
-            cycles: 4,
+            base_cycles: 4,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 cpu.regs.a &= cpu.regs.$reg;
                 cpu.regs.f = 0x20; // H
                 if cpu.regs.a == 0 {
                     cpu.regs.f |= 0x80;
                 } // Z
+                false
             },
         };
     };
@@ -79,10 +116,12 @@ macro_rules! alu_xor {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("XOR ", stringify!($reg)),
-            cycles: 4,
+            base_cycles: 4,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 cpu.regs.a ^= cpu.regs.$reg;
                 cpu.regs.f = if cpu.regs.a == 0 { 0x80 } else { 0x00 }; // Z
+                false
             },
         };
     };
@@ -92,10 +131,12 @@ macro_rules! alu_or {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("OR ", stringify!($reg)),
-            cycles: 4,
+            base_cycles: 4,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 cpu.regs.a |= cpu.regs.$reg;
                 cpu.regs.f = if cpu.regs.a == 0 { 0x80 } else { 0x00 }; // Z
+                false
             },
         };
     };
@@ -105,7 +146,8 @@ macro_rules! alu_cp {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("CP ", stringify!($reg)),
-            cycles: 4,
+            base_cycles: 4,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 let lhs = cpu.regs.a;
                 let rhs = cpu.regs.$reg;
@@ -119,6 +161,7 @@ macro_rules! alu_cp {
                 if rhs > lhs {
                     cpu.regs.f |= 0x10;
                 } // C
+                false
             },
         };
     };
@@ -128,7 +171,8 @@ macro_rules! inc_r {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("INC ", stringify!($reg)),
-            cycles: 4,
+            base_cycles: 4,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 let val = cpu.regs.$reg;
                 let result = val.wrapping_add(1);
@@ -142,6 +186,7 @@ macro_rules! inc_r {
                 } // H
 
                 cpu.regs.$reg = result;
+                false
             },
         };
     };
@@ -151,7 +196,8 @@ macro_rules! dec_r {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("DEC ", stringify!($reg)),
-            cycles: 4,
+            base_cycles: 4,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 let val = cpu.regs.$reg;
                 let result = val.wrapping_sub(1);
@@ -166,6 +212,7 @@ macro_rules! dec_r {
                 } // H
 
                 cpu.regs.$reg = result;
+                false
             },
         };
     };
@@ -175,7 +222,8 @@ macro_rules! add_hl_rr {
     ($table:ident, $code:expr, $rr:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("ADD HL, ", stringify!($rr)),
-            cycles: 8,
+            base_cycles: 8,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 let hl = cpu.regs.hl();
                 let rr = if stringify!($rr) == "sp" {
@@ -201,18 +249,7 @@ macro_rules! add_hl_rr {
                             (if carry { 0x10 } else { 0 }); // C flag
 
                 cpu.regs.set_hl(result);
-
-                // Debug output
-                println!(
-                    "ADD HL, {}: HL = {:#06X}, RR = {:#06X}, Result = {:#06X}, Carry = {}, H_Carry = {}, F = {:#04X}",
-                    stringify!($rr),
-                    hl,
-                    rr,
-                    result,
-                    carry,
-                    h_carry,
-                    cpu.regs.f
-                );
+                false
             },
         };
     };
@@ -223,7 +260,8 @@ macro_rules! inc_rr {
         paste! {
             $table[$code] = Opcode {
                 mnemonic: concat!("INC ", stringify!($rr)),
-                cycles: 8,
+                base_cycles: 8,
+                conditional_cycles: 0,
                 exec: |cpu, _| {
                     let val = if stringify!($rr) == "sp" {
                         cpu.regs.sp
@@ -231,6 +269,7 @@ macro_rules! inc_rr {
                         cpu.regs.$rr()
                     };
                     cpu.regs.[<set_ $rr>](val.wrapping_add(1));
+                    false
                 },
             };
         }
@@ -242,7 +281,8 @@ macro_rules! dec_rr {
         paste! {
             $table[$code] = Opcode {
                 mnemonic: concat!("DEC ", stringify!($rr)),
-                cycles: 8,
+                base_cycles: 8,
+                conditional_cycles: 0,
                 exec: |cpu, _| {
                     let val = if stringify!($rr) == "sp" {
                         cpu.regs.sp
@@ -250,6 +290,7 @@ macro_rules! dec_rr {
                         cpu.regs.$rr()
                     };
                     cpu.regs.[<set_ $rr>](val.wrapping_sub(1));
+                    false
                 },
             };
         }
@@ -260,12 +301,14 @@ macro_rules! ld_r_r {
     ($table:ident, $code:expr, $dst:ident, $src:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("LD ", stringify!($dst), ", ", stringify!($src)),
-            cycles: 4,
+            base_cycles: 4,
+            conditional_cycles: 0,
             exec: |cpu, _| {
                 #[allow(clippy::self_assignment)]
                 {
                     cpu.regs.$dst = cpu.regs.$src;
                 }
+                false
             },
         };
     };
@@ -275,10 +318,12 @@ macro_rules! ld_r_hl {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("LD ", stringify!($reg), ", (HL)"),
-            cycles: 8,
+            base_cycles: 8,
+            conditional_cycles: 0,
             exec: |cpu, bus| {
                 let addr = cpu.regs.hl();
                 cpu.regs.$reg = bus.read(addr);
+                false
             },
         };
     };
@@ -288,10 +333,12 @@ macro_rules! ld_hl_r {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
             mnemonic: concat!("LD (HL), ", stringify!($reg)),
-            cycles: 8,
+            base_cycles: 8,
+            conditional_cycles: 0,
             exec: |cpu, bus| {
                 let addr = cpu.regs.hl();
                 bus.write(addr, cpu.regs.$reg);
+                false
             },
         };
     };
@@ -302,7 +349,8 @@ macro_rules! ld_rr_nn {
         paste! {
             $table[$code] = Opcode {
                 mnemonic: concat!("LD ", stringify!($rr), ", nn"),
-                cycles: 12,
+                base_cycles: 12,
+                conditional_cycles: 0,
                 exec: |cpu, bus| {
                     let low = bus.read(cpu.regs.pc);
                     let high = bus.read(cpu.regs.pc.wrapping_add(1));
@@ -313,6 +361,7 @@ macro_rules! ld_rr_nn {
                     } else {
                         cpu.regs.[<set_ $rr>](value);
                     }
+                    false
                 },
             };
         }
@@ -324,7 +373,8 @@ macro_rules! push_rr {
         paste! {
             $table[$code] = Opcode {
                 mnemonic: concat!("PUSH ", stringify!($rr)),
-                cycles: 16,
+                base_cycles: 16,
+                conditional_cycles: 0,
                 exec: |cpu, bus| {
                     let value = if stringify!($rr) == "af" {
                         u16::from_le_bytes([cpu.regs.f, cpu.regs.a])
@@ -335,6 +385,7 @@ macro_rules! push_rr {
                     bus.write(cpu.regs.sp, (value >> 8) as u8);
                     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
                     bus.write(cpu.regs.sp, value as u8);
+                    false
                 },
             };
         }
@@ -346,7 +397,8 @@ macro_rules! pop_rr {
         paste! {
             $table[$code] = Opcode {
                 mnemonic: concat!("POP ", stringify!($rr)),
-                cycles: 12,
+                base_cycles: 12,
+                conditional_cycles: 0,
                 exec: |cpu, bus| {
                     let low = bus.read(cpu.regs.sp);
                     cpu.regs.sp = cpu.regs.sp.wrapping_add(1);
@@ -360,6 +412,7 @@ macro_rules! pop_rr {
                     } else {
                         cpu.regs.[<set_ $rr>](value);
                     }
+                    false
                 },
             };
         }
@@ -370,7 +423,8 @@ macro_rules! jp_cc_nn {
     ($table:ident, $code:expr, $cc:expr, $flag:expr, $expected:expr) => {
         $table[$code] = Opcode {
             mnemonic: concat!("JP ", $cc, ", nn"),
-            cycles: 16, // Always takes 16 cycles (4 for opcode fetch + 12 for execution)
+            base_cycles: 16, // Always takes 16 cycles (4 for opcode fetch + 12 for execution)
+            conditional_cycles: 0,
             exec: |cpu, bus| {
                 let low = bus.read(cpu.regs.pc);
                 let high = bus.read(cpu.regs.pc.wrapping_add(1));
@@ -378,6 +432,7 @@ macro_rules! jp_cc_nn {
                 if (cpu.regs.f & $flag) == $expected {
                     cpu.regs.pc = u16::from_le_bytes([low, high]);
                 }
+                false
             },
         };
     };
@@ -387,13 +442,15 @@ macro_rules! jr_cc_e {
     ($table:ident, $code:expr, $cc:expr, $flag:expr, $expected:expr) => {
         $table[$code] = Opcode {
             mnemonic: concat!("JR ", $cc, ", e"),
-            cycles: 12, // Always takes 12 cycles (4 for opcode fetch + 8 for execution)
+            base_cycles: 12, // Always takes 12 cycles (4 for opcode fetch + 8 for execution)
+            conditional_cycles: 0,
             exec: |cpu, bus| {
                 let e = bus.read(cpu.regs.pc) as i8;
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 if (cpu.regs.f & $flag) == $expected {
                     cpu.regs.pc = cpu.regs.pc.wrapping_add(e as u16);
                 }
+                false
             },
         };
     };
@@ -403,7 +460,8 @@ macro_rules! call_cc_nn {
     ($table:ident, $code:expr, $cc:expr, $flag:expr, $expected:expr) => {
         $table[$code] = Opcode {
             mnemonic: concat!("CALL ", $cc, ", nn"),
-            cycles: 24, // Always takes 24 cycles (4 for opcode fetch + 20 for execution)
+            base_cycles: 24, // Always takes 24 cycles (4 for opcode fetch + 20 for execution)
+            conditional_cycles: 0,
             exec: |cpu, bus| {
                 let low = bus.read(cpu.regs.pc);
                 let high = bus.read(cpu.regs.pc.wrapping_add(1));
@@ -417,6 +475,7 @@ macro_rules! call_cc_nn {
                     // Jump to target address
                     cpu.regs.pc = u16::from_le_bytes([low, high]);
                 }
+                false
             },
         };
     };
@@ -426,7 +485,8 @@ macro_rules! ret_cc {
     ($table:ident, $code:expr, $cc:expr, $flag:expr, $expected:expr) => {
         $table[$code] = Opcode {
             mnemonic: concat!("RET ", $cc),
-            cycles: 20, // Always takes 20 cycles (4 for opcode fetch + 16 for execution)
+            base_cycles: 20, // Always takes 20 cycles (4 for opcode fetch + 16 for execution)
+            conditional_cycles: 0,
             exec: |cpu, bus| {
                 if (cpu.regs.f & $flag) == $expected {
                     let low = bus.read(cpu.regs.sp);
@@ -435,349 +495,223 @@ macro_rules! ret_cc {
                     cpu.regs.sp = cpu.regs.sp.wrapping_add(1);
                     cpu.regs.pc = u16::from_le_bytes([low, high]);
                 }
+                false
             },
         };
     };
 }
 
-fn rst_00(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
+fn rst_common(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait, address: u16) -> bool {
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
     bus.write(cpu.regs.sp, cpu.regs.pc as u8);
-    cpu.regs.pc = 0x00;
+    cpu.regs.pc = address;
+    false
 }
 
-fn rst_08(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, cpu.regs.pc as u8);
-    cpu.regs.pc = 0x08;
+fn rst_00(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) -> bool {
+    rst_common(cpu, bus, 0x00)
 }
 
-fn rst_10(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, cpu.regs.pc as u8);
-    cpu.regs.pc = 0x10;
+fn rst_08(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) -> bool {
+    rst_common(cpu, bus, 0x08)
 }
 
-fn rst_18(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, cpu.regs.pc as u8);
-    cpu.regs.pc = 0x18;
+fn rst_10(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) -> bool {
+    rst_common(cpu, bus, 0x10)
 }
 
-fn rst_20(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, cpu.regs.pc as u8);
-    cpu.regs.pc = 0x20;
+fn rst_18(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) -> bool {
+    rst_common(cpu, bus, 0x18)
 }
 
-fn rst_28(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, cpu.regs.pc as u8);
-    cpu.regs.pc = 0x28;
+fn rst_20(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) -> bool {
+    rst_common(cpu, bus, 0x20)
 }
 
-fn rst_30(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, cpu.regs.pc as u8);
-    cpu.regs.pc = 0x30;
+fn rst_28(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) -> bool {
+    rst_common(cpu, bus, 0x28)
 }
 
-fn rst_38(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) {
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
-    cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-    bus.write(cpu.regs.sp, cpu.regs.pc as u8);
-    cpu.regs.pc = 0x38;
+fn rst_30(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) -> bool {
+    rst_common(cpu, bus, 0x30)
+}
+
+fn rst_38(cpu: &mut CPU, bus: &mut dyn MemoryBusTrait) -> bool {
+    rst_common(cpu, bus, 0x38)
+}
+
+macro_rules! generate_bit_op {
+    ($table:ident, $base:expr, $bit:expr, $reg:expr, $op:ident) => {
+        $table[$base + $bit * 8 + reg_to_index($reg)] = Opcode {
+            mnemonic: concat!(stringify!($op), " ", stringify!($bit), ",", $reg),
+            base_cycles: 8,
+            conditional_cycles: 0,
+            exec: |cpu, _| {
+                let value = cpu.regs.get_reg($reg);
+                let mask = 1 << $bit;
+
+                match stringify!($op) {
+                    "BIT" => {
+                        let result = value & mask != 0;
+                        let mut flags = cpu.regs.flags();
+                        flags.zero = !result;
+                        flags.subtract = false;
+                        flags.half_carry = true;
+                        cpu.regs.set_flags(flags);
+                    }
+                    "RES" => {
+                        cpu.regs.set_reg($reg, value & !mask);
+                    }
+                    "SET" => {
+                        cpu.regs.set_reg($reg, value | mask);
+                    }
+                    _ => panic!("Invalid bit operation"),
+                }
+                false
+            },
+        };
+    };
 }
 
 macro_rules! generate_bit_ops_for_reg {
-    ($table:ident, $reg:ident) => {
-        paste::paste! {
-            // BIT n,r operations (base 0x40)
-            {
-                const fn bit_op<const BIT: u8>(cpu: &mut CPU, _: &mut dyn MemoryBusTrait) {
-                    let mask = 1 << BIT;
-                    let value = cpu.regs.$reg;
-                    cpu.regs.f = (cpu.regs.f & 0x10) | 0x20;
-                    if (value & mask) == 0 { cpu.regs.f |= 0x80; }
-                }
+    ($table:ident, $reg:expr) => {
+        // Generate BIT operations
+        generate_bit_op!($table, 0x40, 0, $reg, BIT);
+        generate_bit_op!($table, 0x40, 1, $reg, BIT);
+        generate_bit_op!($table, 0x40, 2, $reg, BIT);
+        generate_bit_op!($table, 0x40, 3, $reg, BIT);
+        generate_bit_op!($table, 0x40, 4, $reg, BIT);
+        generate_bit_op!($table, 0x40, 5, $reg, BIT);
+        generate_bit_op!($table, 0x40, 6, $reg, BIT);
+        generate_bit_op!($table, 0x40, 7, $reg, BIT);
 
-                for bit in 0..8 {
-                    let base = 0x40 + (bit << 3);
-                    $table[base + (stringify!($reg).as_bytes()[0] & 0x07) as usize] = Opcode {
-                        mnemonic: concat!("BIT ", stringify!(bit), ",", stringify!($reg)),
-                        cycles: 8,
-                        exec: match bit {
-                            0 => bit_op::<0>,
-                            1 => bit_op::<1>,
-                            2 => bit_op::<2>,
-                            3 => bit_op::<3>,
-                            4 => bit_op::<4>,
-                            5 => bit_op::<5>,
-                            6 => bit_op::<6>,
-                            7 => bit_op::<7>,
-                            _ => unreachable!(),
-                        },
-                    };
-                }
-            }
+        // Generate RES operations
+        generate_bit_op!($table, 0x80, 0, $reg, RES);
+        generate_bit_op!($table, 0x80, 1, $reg, RES);
+        generate_bit_op!($table, 0x80, 2, $reg, RES);
+        generate_bit_op!($table, 0x80, 3, $reg, RES);
+        generate_bit_op!($table, 0x80, 4, $reg, RES);
+        generate_bit_op!($table, 0x80, 5, $reg, RES);
+        generate_bit_op!($table, 0x80, 6, $reg, RES);
+        generate_bit_op!($table, 0x80, 7, $reg, RES);
 
-            // RES n,r operations (base 0x80)
-            {
-                const fn res_op<const BIT: u8>(cpu: &mut CPU, _: &mut dyn MemoryBusTrait) {
-                    let mask = !(1 << BIT);
-                    cpu.regs.$reg &= mask;
-                }
-
-                for bit in 0..8 {
-                    let base = 0x80 + (bit << 3);
-                    $table[base + (stringify!($reg).as_bytes()[0] & 0x07) as usize] = Opcode {
-                        mnemonic: concat!("RES ", stringify!(bit), ",", stringify!($reg)),
-                        cycles: 8,
-                        exec: match bit {
-                            0 => res_op::<0>,
-                            1 => res_op::<1>,
-                            2 => res_op::<2>,
-                            3 => res_op::<3>,
-                            4 => res_op::<4>,
-                            5 => res_op::<5>,
-                            6 => res_op::<6>,
-                            7 => res_op::<7>,
-                            _ => unreachable!(),
-                        },
-                    };
-                }
-            }
-
-            // SET n,r operations (base 0xC0)
-            {
-                const fn set_op<const BIT: u8>(cpu: &mut CPU, _: &mut dyn MemoryBusTrait) {
-                    let mask = 1 << BIT;
-                    cpu.regs.$reg |= mask;
-                }
-
-                for bit in 0..8 {
-                    let base = 0xC0 + (bit << 3);
-                    $table[base + (stringify!($reg).as_bytes()[0] & 0x07) as usize] = Opcode {
-                        mnemonic: concat!("SET ", stringify!(bit), ",", stringify!($reg)),
-                        cycles: 8,
-                        exec: match bit {
-                            0 => set_op::<0>,
-                            1 => set_op::<1>,
-                            2 => set_op::<2>,
-                            3 => set_op::<3>,
-                            4 => set_op::<4>,
-                            5 => set_op::<5>,
-                            6 => set_op::<6>,
-                            7 => set_op::<7>,
-                            _ => unreachable!(),
-                        },
-                    };
-                }
-            }
-        }
-    };
-}
-
-macro_rules! rlc_r {
-    ($table:ident, $code:expr, $reg:ident) => {
-        $table[$code] = Opcode {
-            mnemonic: concat!("RLC ", stringify!($reg)),
-            cycles: 8,
-            exec: |cpu, _| {
-                let value = cpu.regs.$reg;
-                let carry = (value & 0x80) != 0;
-                let result = (value << 1) | (if carry { 1 } else { 0 });
-                cpu.regs.$reg = result;
-                cpu.regs.f = 0;
-                if result == 0 {
-                    cpu.regs.f |= 0x80;
-                }
-                if carry {
-                    cpu.regs.f |= 0x10;
-                }
-            },
-        };
-    };
-}
-
-macro_rules! rrc_r {
-    ($table:ident, $code:expr, $reg:ident) => {
-        $table[$code] = Opcode {
-            mnemonic: concat!("RRC ", stringify!($reg)),
-            cycles: 8,
-            exec: |cpu, _| {
-                let value = cpu.regs.$reg;
-                let carry = (value & 0x01) != 0;
-                let result = (value >> 1) | (if carry { 0x80 } else { 0 });
-                cpu.regs.$reg = result;
-                cpu.regs.f = 0;
-                if result == 0 {
-                    cpu.regs.f |= 0x80;
-                }
-                if carry {
-                    cpu.regs.f |= 0x10;
-                }
-            },
-        };
-    };
-}
-
-macro_rules! rl_r {
-    ($table:ident, $code:expr, $reg:ident) => {
-        $table[$code] = Opcode {
-            mnemonic: concat!("RL ", stringify!($reg)),
-            cycles: 8,
-            exec: |cpu, _| {
-                let value = cpu.regs.$reg;
-                let old_carry = (cpu.regs.f & 0x10) != 0;
-                let new_carry = (value & 0x80) != 0;
-                let result = (value << 1) | (if old_carry { 1 } else { 0 });
-                cpu.regs.$reg = result;
-                cpu.regs.f = 0;
-                if result == 0 {
-                    cpu.regs.f |= 0x80;
-                }
-                if new_carry {
-                    cpu.regs.f |= 0x10;
-                }
-            },
-        };
-    };
-}
-
-macro_rules! rr_r {
-    ($table:ident, $code:expr, $reg:ident) => {
-        $table[$code] = Opcode {
-            mnemonic: concat!("RR ", stringify!($reg)),
-            cycles: 8,
-            exec: |cpu, _| {
-                let value = cpu.regs.$reg;
-                let old_carry = (cpu.regs.f & 0x10) != 0;
-                let new_carry = (value & 0x01) != 0;
-                let result = (value >> 1) | (if old_carry { 0x80 } else { 0 });
-                cpu.regs.$reg = result;
-                cpu.regs.f = 0;
-                if result == 0 {
-                    cpu.regs.f |= 0x80;
-                }
-                if new_carry {
-                    cpu.regs.f |= 0x10;
-                }
-            },
-        };
-    };
-}
-
-macro_rules! sla_r {
-    ($table:ident, $code:expr, $reg:ident) => {
-        $table[$code] = Opcode {
-            mnemonic: concat!("SLA ", stringify!($reg)),
-            cycles: 8,
-            exec: |cpu, _| {
-                let value = cpu.regs.$reg;
-                let carry = (value & 0x80) != 0;
-                let result = value << 1;
-                cpu.regs.$reg = result;
-                cpu.regs.f = 0;
-                if result == 0 {
-                    cpu.regs.f |= 0x80;
-                }
-                if carry {
-                    cpu.regs.f |= 0x10;
-                }
-            },
-        };
-    };
-}
-
-macro_rules! sra_r {
-    ($table:ident, $code:expr, $reg:ident) => {
-        $table[$code] = Opcode {
-            mnemonic: concat!("SRA ", stringify!($reg)),
-            cycles: 8,
-            exec: |cpu, _| {
-                let value = cpu.regs.$reg;
-                let carry = (value & 0x01) != 0;
-                let result = (value >> 1) | (value & 0x80);
-                cpu.regs.$reg = result;
-                cpu.regs.f = 0;
-                if result == 0 {
-                    cpu.regs.f |= 0x80;
-                }
-                if carry {
-                    cpu.regs.f |= 0x10;
-                }
-            },
-        };
-    };
-}
-
-macro_rules! srl_r {
-    ($table:ident, $code:expr, $reg:ident) => {
-        $table[$code] = Opcode {
-            mnemonic: concat!("SRL ", stringify!($reg)),
-            cycles: 8,
-            exec: |cpu, _| {
-                let value = cpu.regs.$reg;
-                let carry = (value & 0x01) != 0;
-                let result = value >> 1;
-                cpu.regs.$reg = result;
-                cpu.regs.f = 0;
-                if result == 0 {
-                    cpu.regs.f |= 0x80;
-                }
-                if carry {
-                    cpu.regs.f |= 0x10;
-                }
-            },
-        };
+        // Generate SET operations
+        generate_bit_op!($table, 0xC0, 0, $reg, SET);
+        generate_bit_op!($table, 0xC0, 1, $reg, SET);
+        generate_bit_op!($table, 0xC0, 2, $reg, SET);
+        generate_bit_op!($table, 0xC0, 3, $reg, SET);
+        generate_bit_op!($table, 0xC0, 4, $reg, SET);
+        generate_bit_op!($table, 0xC0, 5, $reg, SET);
+        generate_bit_op!($table, 0xC0, 6, $reg, SET);
+        generate_bit_op!($table, 0xC0, 7, $reg, SET);
     };
 }
 
 macro_rules! generate_bit_ops {
     ($table:ident) => {
-        // BIT n,r
-        generate_bit_ops_for_reg!($table, b);
-        generate_bit_ops_for_reg!($table, c);
-        generate_bit_ops_for_reg!($table, d);
-        generate_bit_ops_for_reg!($table, e);
-        generate_bit_ops_for_reg!($table, h);
-        generate_bit_ops_for_reg!($table, l);
-        generate_bit_ops_for_reg!($table, a);
+        generate_bit_ops_for_reg!($table, "b");
+        generate_bit_ops_for_reg!($table, "c");
+        generate_bit_ops_for_reg!($table, "d");
+        generate_bit_ops_for_reg!($table, "e");
+        generate_bit_ops_for_reg!($table, "h");
+        generate_bit_ops_for_reg!($table, "l");
+        generate_bit_ops_for_reg!($table, "a");
     };
 }
 
 pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     let mut table: [Opcode; 256] = [Opcode {
         mnemonic: "UNUSED",
-        cycles: 0,
+        base_cycles: 0,
+        conditional_cycles: 0,
         exec: |_, _| panic!("Unimplemented opcode"),
     }; 256];
 
     table[0x00] = Opcode {
         mnemonic: "NOP",
-        cycles: 4,
-        exec: |_, _| {},
+        base_cycles: 4,
+        conditional_cycles: 0,
+        exec: |_, _| false,
+    };
+
+    // ADD A, B
+    table[0x80] = Opcode {
+        mnemonic: "ADD A, B",
+        base_cycles: 4,
+        conditional_cycles: 0,
+        exec: |cpu, _| {
+            let a = cpu.regs.a;
+            let b = cpu.regs.b;
+            let result = a.wrapping_add(b);
+
+            cpu.regs.f = 0;
+            if result == 0 {
+                cpu.regs.f |= 0x80;
+            } // Z
+            if (a & 0xF) + (b & 0xF) > 0xF {
+                cpu.regs.f |= 0x20;
+            } // H
+            if result < a {
+                cpu.regs.f |= 0x10;
+            } // C
+
+            cpu.regs.a = result;
+            false
+        },
+    };
+
+    // INC B
+    table[0x04] = Opcode {
+        mnemonic: "INC B",
+        base_cycles: 4,
+        conditional_cycles: 0,
+        exec: |cpu, _| {
+            let val = cpu.regs.b;
+            let result = val.wrapping_add(1);
+
+            cpu.regs.f &= 0x10; // Preserve C
+            if result == 0 {
+                cpu.regs.f |= 0x80;
+            } // Z
+            if (val & 0x0F) + 1 > 0x0F {
+                cpu.regs.f |= 0x20;
+            } // H
+
+            cpu.regs.b = result;
+            false
+        },
+    };
+
+    // ADD HL, BC
+    table[0x09] = Opcode {
+        mnemonic: "ADD HL, BC",
+        base_cycles: 8,
+        conditional_cycles: 0,
+        exec: |cpu, _| {
+            let hl = cpu.regs.hl();
+            let bc = cpu.regs.bc();
+            let result = hl.wrapping_add(bc);
+
+            cpu.regs.f &= 0x80; // Preserve Z
+            cpu.regs.f &= !0x40; // Reset N
+            if (hl & 0x0FFF) + (bc & 0x0FFF) > 0x0FFF {
+                cpu.regs.f |= 0x20;
+            } // H
+            if result < hl {
+                cpu.regs.f |= 0x10;
+            } // C
+
+            cpu.regs.set_hl(result);
+            false
+        },
     };
 
     table[0xB8] = Opcode {
         mnemonic: "CP B",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             let lhs = cpu.regs.a;
             let rhs = cpu.regs.b;
@@ -791,83 +725,98 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if rhs > lhs {
                 cpu.regs.f |= 0x10;
             }
+            false
         },
     };
-    // Repeat 0xB9–0xBF for CP C–A
 
     table[0x06] = Opcode {
         mnemonic: "LD B, n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.b = n;
+            false
         },
     };
 
     table[0x0E] = Opcode {
         mnemonic: "LD C, n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.c = n;
+            false
         },
     };
 
     table[0x16] = Opcode {
         mnemonic: "LD D, n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.d = n;
+            false
         },
     };
 
     table[0x1E] = Opcode {
         mnemonic: "LD E, n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.e = n;
+            false
         },
     };
 
     table[0x26] = Opcode {
         mnemonic: "LD H, n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.h = n;
+            false
         },
     };
 
     table[0x2E] = Opcode {
         mnemonic: "LD L, n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.l = n;
+            false
         },
     };
 
     table[0x3E] = Opcode {
         mnemonic: "LD A, n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.a = n;
+            false
         },
     };
 
     table[0xC6] = Opcode {
         mnemonic: "ADD A, n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
@@ -887,12 +836,14 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             } // C
 
             cpu.regs.a = result;
+            false
         },
     };
 
     table[0xD6] = Opcode {
         mnemonic: "SUB n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
@@ -912,12 +863,14 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             } // C
 
             cpu.regs.a = result;
+            false
         },
     };
 
     table[0xE6] = Opcode {
         mnemonic: "AND n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
@@ -927,36 +880,42 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if cpu.regs.a == 0 {
                 cpu.regs.f |= 0x80;
             } // Z
+            false
         },
     };
 
     table[0xEE] = Opcode {
         mnemonic: "XOR n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.a ^= n;
 
             cpu.regs.f = if cpu.regs.a == 0 { 0x80 } else { 0x00 }; // Z
+            false
         },
     };
 
     table[0xF6] = Opcode {
         mnemonic: "OR n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.a |= n;
 
             cpu.regs.f = if cpu.regs.a == 0 { 0x80 } else { 0x00 }; // Z
+            false
         },
     };
 
     table[0xFE] = Opcode {
         mnemonic: "CP n",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
@@ -972,20 +931,36 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if n > a {
                 cpu.regs.f |= 0x10;
             } // C
+            false
         },
     };
 
     table[0x76] = Opcode {
         mnemonic: "HALT",
-        cycles: 4, // The HALT instruction typically takes 4 cycles
+        base_cycles: 4, // The HALT instruction typically takes 4 cycles
+        conditional_cycles: 0,
         exec: |cpu, _| {
             // HALT simply halts the CPU, so this should set the HALT flag or handle the condition
             cpu.halted = true;
+            false
+        },
+    };
+
+    table[0x10] = Opcode {
+        mnemonic: "STOP",
+        base_cycles: 4,
+        conditional_cycles: 0,
+        exec: |cpu, bus| {
+            // skip immediate parameter
+            bus.read(cpu.regs.pc);
+            cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
+            cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
+            cpu.stopped = true;
+            false
         },
     };
 
     // ADD A, r
-    alu_add!(table, 0x80, b);
     alu_add!(table, 0x81, c);
     alu_add!(table, 0x82, d);
     alu_add!(table, 0x83, e);
@@ -1039,7 +1014,6 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     alu_cp!(table, 0xBF, a);
 
     // INC r
-    inc_r!(table, 0x04, b);
     inc_r!(table, 0x0C, c);
     inc_r!(table, 0x14, d);
     inc_r!(table, 0x1C, e);
@@ -1150,153 +1124,183 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     // Load immediate to (HL)
     table[0x36] = Opcode {
         mnemonic: "LD (HL), n",
-        cycles: 12,
+        base_cycles: 12,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             let addr = cpu.regs.hl();
             bus.write(addr, n);
+            false
         },
     };
 
     // Load A to/from (BC)/(DE)
     table[0x02] = Opcode {
         mnemonic: "LD (BC), A",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             bus.write(cpu.regs.bc(), cpu.regs.a);
+            false
         },
     };
 
     table[0x12] = Opcode {
         mnemonic: "LD (DE), A",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             bus.write(cpu.regs.de(), cpu.regs.a);
+            false
         },
     };
 
     table[0x0A] = Opcode {
         mnemonic: "LD A, (BC)",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             cpu.regs.a = bus.read(cpu.regs.bc());
+            false
         },
     };
 
     table[0x1A] = Opcode {
         mnemonic: "LD A, (DE)",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             cpu.regs.a = bus.read(cpu.regs.de());
+            false
         },
     };
 
     // Load A to/from direct address
     table[0xFA] = Opcode {
         mnemonic: "LD A, (nn)",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let low = bus.read(cpu.regs.pc);
             let high = bus.read(cpu.regs.pc.wrapping_add(1));
             cpu.regs.pc = cpu.regs.pc.wrapping_add(2);
             let addr = u16::from_le_bytes([low, high]);
             cpu.regs.a = bus.read(addr);
+            false
         },
     };
 
     table[0xEA] = Opcode {
         mnemonic: "LD (nn), A",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let low = bus.read(cpu.regs.pc);
             let high = bus.read(cpu.regs.pc.wrapping_add(1));
             cpu.regs.pc = cpu.regs.pc.wrapping_add(2);
             let addr = u16::from_le_bytes([low, high]);
             bus.write(addr, cpu.regs.a);
+            false
         },
     };
 
     // Load A to/from high memory
     table[0xF0] = Opcode {
         mnemonic: "LDH A, (n)",
-        cycles: 12,
+        base_cycles: 12,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let offset = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             let addr = 0xFF00 | u16::from(offset);
             cpu.regs.a = bus.read(addr);
+            false
         },
     };
 
     table[0xE0] = Opcode {
         mnemonic: "LDH (n), A",
-        cycles: 12,
+        base_cycles: 12,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let offset = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             let addr = 0xFF00 | u16::from(offset);
             bus.write(addr, cpu.regs.a);
+            false
         },
     };
 
     // Load A to/from (FF00 + C)
     table[0xF2] = Opcode {
         mnemonic: "LDH A, (C)",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let addr = 0xFF00 | u16::from(cpu.regs.c);
             cpu.regs.a = bus.read(addr);
+            false
         },
     };
 
     table[0xE2] = Opcode {
         mnemonic: "LDH (C), A",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let addr = 0xFF00 | u16::from(cpu.regs.c);
             bus.write(addr, cpu.regs.a);
+            false
         },
     };
 
     // Load A to/from (HL) with increment/decrement
     table[0x22] = Opcode {
         mnemonic: "LD (HL+), A",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let addr = cpu.regs.hl();
             bus.write(addr, cpu.regs.a);
             cpu.regs.set_hl(addr.wrapping_add(1));
+            false
         },
     };
 
     table[0x2A] = Opcode {
         mnemonic: "LD A, (HL+)",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let addr = cpu.regs.hl();
             cpu.regs.a = bus.read(addr);
             cpu.regs.set_hl(addr.wrapping_add(1));
+            false
         },
     };
 
     table[0x32] = Opcode {
         mnemonic: "LD (HL-), A",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let addr = cpu.regs.hl();
             bus.write(addr, cpu.regs.a);
             cpu.regs.set_hl(addr.wrapping_sub(1));
+            false
         },
     };
 
     table[0x3A] = Opcode {
         mnemonic: "LD A, (HL-)",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let addr = cpu.regs.hl();
             cpu.regs.a = bus.read(addr);
             cpu.regs.set_hl(addr.wrapping_sub(1));
+            false
         },
     };
 
@@ -1309,7 +1313,8 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     // Load SP to memory
     table[0x08] = Opcode {
         mnemonic: "LD (nn), SP",
-        cycles: 20,
+        base_cycles: 20,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let low = bus.read(cpu.regs.pc);
             let high = bus.read(cpu.regs.pc.wrapping_add(1));
@@ -1317,15 +1322,18 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let addr = u16::from_le_bytes([low, high]);
             bus.write(addr, (cpu.regs.sp & 0xFF) as u8);
             bus.write(addr.wrapping_add(1), (cpu.regs.sp >> 8) as u8);
+            false
         },
     };
 
     // Load HL to SP
     table[0xF9] = Opcode {
         mnemonic: "LD SP, HL",
-        cycles: 8,
+        base_cycles: 8,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             cpu.regs.sp = cpu.regs.hl();
+            false
         },
     };
 
@@ -1343,19 +1351,23 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     // Unconditional jumps
     table[0xC3] = Opcode {
         mnemonic: "JP nn",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let low = bus.read(cpu.regs.pc);
             let high = bus.read(cpu.regs.pc.wrapping_add(1));
             cpu.regs.pc = u16::from_le_bytes([low, high]);
+            false
         },
     };
 
     table[0xE9] = Opcode {
         mnemonic: "JP HL",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             cpu.regs.pc = cpu.regs.hl();
+            false
         },
     };
 
@@ -1368,11 +1380,15 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     // Relative jumps
     table[0x18] = Opcode {
         mnemonic: "JR e",
-        cycles: 12,
+        base_cycles: 12,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let e = bus.read(cpu.regs.pc) as i8;
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
-            cpu.regs.pc = cpu.regs.pc.wrapping_add(e as u16);
+            if (cpu.regs.f & 0x80) == 0x00 {
+                cpu.regs.pc = cpu.regs.pc.wrapping_add(e as u16);
+            }
+            false
         },
     };
 
@@ -1384,7 +1400,8 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     // Call instructions
     table[0xCD] = Opcode {
         mnemonic: "CALL nn",
-        cycles: 24,
+        base_cycles: 24,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let low = bus.read(cpu.regs.pc);
             let high = bus.read(cpu.regs.pc.wrapping_add(1));
@@ -1398,6 +1415,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
 
             // Jump to target address
             cpu.regs.pc = u16::from_le_bytes([low, high]);
+            false
         },
     };
 
@@ -1409,13 +1427,15 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     // Return instructions
     table[0xC9] = Opcode {
         mnemonic: "RET",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
             let low = bus.read(cpu.regs.sp);
             cpu.regs.sp = cpu.regs.sp.wrapping_add(1);
             let high = bus.read(cpu.regs.sp);
             cpu.regs.sp = cpu.regs.sp.wrapping_add(1);
             cpu.regs.pc = u16::from_le_bytes([low, high]);
+            false
         },
     };
 
@@ -1426,70 +1446,81 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
 
     table[0xD9] = Opcode {
         mnemonic: "RETI",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: |cpu, bus| {
+            // pop return address and enable interrupts
             let low = bus.read(cpu.regs.sp);
-            cpu.regs.sp = cpu.regs.sp.wrapping_add(1);
-            let high = bus.read(cpu.regs.sp);
-            cpu.regs.sp = cpu.regs.sp.wrapping_add(1);
+            let high = bus.read(cpu.regs.sp.wrapping_add(1));
+            cpu.regs.sp = cpu.regs.sp.wrapping_add(2);
             cpu.regs.pc = u16::from_le_bytes([low, high]);
-            cpu.ime = true; // Enable interrupts
+            cpu.ime = true;
+            false
         },
     };
 
     // RST instructions
     table[0xC7] = Opcode {
         mnemonic: "RST 00H",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: rst_00,
     };
 
     table[0xCF] = Opcode {
         mnemonic: "RST 08H",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: rst_08,
     };
 
     table[0xD7] = Opcode {
         mnemonic: "RST 10H",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: rst_10,
     };
 
     table[0xDF] = Opcode {
         mnemonic: "RST 18H",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: rst_18,
     };
 
     table[0xE7] = Opcode {
         mnemonic: "RST 20H",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: rst_20,
     };
 
     table[0xEF] = Opcode {
         mnemonic: "RST 28H",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: rst_28,
     };
 
     table[0xF7] = Opcode {
         mnemonic: "RST 30H",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: rst_30,
     };
 
     table[0xFF] = Opcode {
         mnemonic: "RST 38H",
-        cycles: 16,
+        base_cycles: 16,
+        conditional_cycles: 0,
         exec: rst_38,
     };
 
     // Rotate A left
     table[0x07] = Opcode {
         mnemonic: "RLCA",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             let a = cpu.regs.a;
             let carry = (a & 0x80) != 0;
@@ -1498,13 +1529,15 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if carry {
                 cpu.regs.f |= 0x10;
             }
+            false
         },
     };
 
     // Rotate A right
     table[0x0F] = Opcode {
         mnemonic: "RRCA",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             let a = cpu.regs.a;
             let carry = (a & 0x01) != 0;
@@ -1513,13 +1546,15 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if carry {
                 cpu.regs.f |= 0x10;
             }
+            false
         },
     };
 
     // Rotate A left through carry
     table[0x17] = Opcode {
         mnemonic: "RLA",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             let a = cpu.regs.a;
             let old_carry = (cpu.regs.f & 0x10) != 0;
@@ -1529,13 +1564,15 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if new_carry {
                 cpu.regs.f |= 0x10;
             }
+            false
         },
     };
 
     // Rotate A right through carry
     table[0x1F] = Opcode {
         mnemonic: "RRA",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             let a = cpu.regs.a;
             let old_carry = (cpu.regs.f & 0x10) != 0;
@@ -1545,13 +1582,15 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if new_carry {
                 cpu.regs.f |= 0x10;
             }
+            false
         },
     };
 
     // Decimal adjust A
     table[0x27] = Opcode {
         mnemonic: "DAA",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             let mut a = cpu.regs.a;
             let mut adjust = 0;
@@ -1579,60 +1618,68 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 cpu.regs.f |= 0x80;
             }
             cpu.regs.a = a;
+            false
         },
     };
 
     // Complement A
     table[0x2F] = Opcode {
         mnemonic: "CPL",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             cpu.regs.a = !cpu.regs.a;
             cpu.regs.f |= 0x60; // Set N and H flags
+            false
         },
     };
 
     // Set carry flag
     table[0x37] = Opcode {
         mnemonic: "SCF",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             cpu.regs.f &= 0x80; // Keep Z flag
             cpu.regs.f |= 0x10; // Set C flag
+            false
         },
     };
 
     // Complement carry flag
     table[0x3F] = Opcode {
         mnemonic: "CCF",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             let carry = cpu.regs.f & 0x10;
             cpu.regs.f &= 0x80; // Keep Z flag
             cpu.regs.f |= carry ^ 0x10; // Toggle C flag
+            false
         },
     };
 
     // Disable interrupts
     table[0xF3] = Opcode {
         mnemonic: "DI",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             cpu.ime = false;
+            false
         },
     };
 
     // Enable interrupts
     table[0xFB] = Opcode {
         mnemonic: "EI",
-        cycles: 4,
+        base_cycles: 4,
+        conditional_cycles: 0,
         exec: |cpu, _| {
             cpu.ime = true;
+            false
         },
     };
-
-    // Generate bit operations for all registers
-    generate_bit_ops!(table);
 
     table
 });
@@ -1640,18 +1687,34 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
 pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     let mut table: [Opcode; 256] = [Opcode {
         mnemonic: "UNUSED",
-        cycles: 0,
+        base_cycles: 0,
+        conditional_cycles: 0,
         exec: |_, _| panic!("Unimplemented CB opcode"),
     }; 256];
 
-    // RLC r
-    rlc_r!(table, 0x00, b);
-    rlc_r!(table, 0x01, c);
-    rlc_r!(table, 0x02, d);
-    rlc_r!(table, 0x03, e);
-    rlc_r!(table, 0x04, h);
-    rlc_r!(table, 0x05, l);
-    rlc_r!(table, 0x07, a);
+    // RL r - Rotate register left through carry
+    table[0x11] = Opcode {
+        mnemonic: "RL C",
+        base_cycles: 8, // CB prefix instructions take 8 cycles total
+        conditional_cycles: 0,
+        exec: |cpu, _| {
+            let value = cpu.regs.c;
+            let old_carry = (cpu.regs.f & 0x10) != 0;
+            let new_carry = (value & 0x80) != 0;
+
+            cpu.regs.c = (value << 1) | (if old_carry { 1 } else { 0 });
+
+            // Update flags
+            cpu.regs.f = 0;
+            if cpu.regs.c == 0 {
+                cpu.regs.f |= 0x80; // Z flag
+            }
+            if new_carry {
+                cpu.regs.f |= 0x10; // C flag
+            }
+            false
+        },
+    };
 
     // Generate all bit operations
     generate_bit_ops!(table);

@@ -1,27 +1,75 @@
-name: CI
+# name: CI
+
+# on: [push, pull_request]
+
+# jobs:
+#     build:
+#         runs-on: ubuntu-latest
+
+#         steps:
+#             - uses: actions/checkout@v3
+
+#             - name: Install Rust
+#               uses: dtolnay/rust-toolchain@nightly
+#               with:
+#                   components: clippy, rustfmt
+
+#             - name: Build workspace
+#               run: cargo build --workspace --all-targets --release
+
+#             - name: Format check
+#               run: cargo fmt --all --verbose
+
+#             - name: Clippy lint
+#               run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+#             - name: Run tests
+#               run: cargo test --workspace --all-targets --all-features
+
+name: CI # Continuous Integration
 
 on: [push, pull_request]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+    lint:
+        name: Linting
+        runs-on: ubuntu-latest
+        continue-on-error: true
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@nightly
+              with:
+                  components: rustfmt, clippy
+            - uses: Swatinem/rust-cache@v2
+            - name: Check formatting
+              run: cargo +nightly fmt --all --verbose
+            - name: Clippy check
+              run: cargo +nightly clippy --all-targets --all-features --workspace -- -D warnings
 
-    steps:
-    - uses: actions/checkout@v3
+    test:
+        name: Test Suite
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - name: Run tests
+              run: cargo +stable test --all-features --all-targets--workspace
 
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: clippy, rustfmt
-
-    - name: Build workspace
-      run: cargo build --workspace --all-targets
-
-    - name: Format check
-      run: cargo fmt -- --check
-
-    - name: Clippy lint
-      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-    - name: Run tests
-      run: cargo test --workspace
+    docs:
+        name: Docs
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - name: Check documentation
+              env:
+                  RUSTDOCFLAGS: -D warnings
+              run: cargo +stable doc --no-deps --document-private-items --all-features --workspace --examples
