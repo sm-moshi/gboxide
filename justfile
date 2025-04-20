@@ -13,6 +13,9 @@ release:
 test:
     cargo test --workspace
 
+nextest:
+    cargo nextest run --workspace --no-fail-fast --test-threads=-4
+
 fmt:
     cargo fmt --all
 

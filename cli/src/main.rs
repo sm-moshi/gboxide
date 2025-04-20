@@ -1,9 +1,5 @@
 /// cli/src/main.rs
-use core_lib::{
-    cartridge::Cartridge,
-    cpu::CPU,
-    mmu::{MemoryBusTrait, MMU},
-};
+use core_lib::{cpu::CPU, mmu::MMU};
 use std::{fs, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

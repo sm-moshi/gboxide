@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bitflags = "2.9.0"
-serde    = { version = "1.0.219", features = ["derive"] }
+bitflags          = "2.9.0"
+serde             = { version = "1.0.219", features = ["derive"] }
+pretty_assertions = { workspace = true }
+anyhow            = { workspace = true }
+log               = { workspace = true }

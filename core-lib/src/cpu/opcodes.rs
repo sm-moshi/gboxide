@@ -23,18 +23,12 @@ fn reg_to_index(reg: &str) -> usize {
         .unwrap_or_else(|| panic!("Invalid register"))
 }
 
+#[derive(Clone, Copy)]
 pub struct Opcode {
     pub mnemonic: &'static str,
     pub base_cycles: u32,        // Includes fetch cycles
     pub conditional_cycles: u32, // Additional cycles for conditional instructions
     pub exec: fn(&mut CPU, &mut dyn MemoryBusTrait) -> bool, // Returns true if condition met
-}
-
-impl Copy for Opcode {}
-impl Clone for Opcode {
-    fn clone(&self) -> Self {
-        *self
-    }
 }
 
 macro_rules! alu_add {
@@ -442,7 +436,7 @@ macro_rules! jr_cc_e {
     ($table:ident, $code:expr, $cc:expr, $flag:expr, $expected:expr) => {
         $table[$code] = Opcode {
             mnemonic: concat!("JR ", $cc, ", e"),
-            base_cycles: 12, // Always takes 12 cycles (4 for opcode fetch + 8 for execution)
+            base_cycles: 12,
             conditional_cycles: 0,
             exec: |cpu, bus| {
                 let e = bus.read(cpu.regs.pc) as i8;
@@ -462,6 +456,7 @@ macro_rules! call_cc_nn {
             mnemonic: concat!("CALL ", $cc, ", nn"),
             base_cycles: 24, // Always takes 24 cycles (4 for opcode fetch + 20 for execution)
             conditional_cycles: 0,
+
             exec: |cpu, bus| {
                 let low = bus.read(cpu.regs.pc);
                 let high = bus.read(cpu.regs.pc.wrapping_add(1));
@@ -1524,7 +1519,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: |cpu, _| {
             let a = cpu.regs.a;
             let carry = (a & 0x80) != 0;
-            cpu.regs.a = (a << 1) | (if carry { 1 } else { 0 });
+            cpu.regs.a = (a << 1) | u8::from(carry);
             cpu.regs.f = 0;
             if carry {
                 cpu.regs.f |= 0x10;
@@ -1541,7 +1536,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: |cpu, _| {
             let a = cpu.regs.a;
             let carry = (a & 0x01) != 0;
-            cpu.regs.a = (a >> 1) | (if carry { 0x80 } else { 0 });
+            cpu.regs.a = (a >> 1) | u8::from(carry);
             cpu.regs.f = 0;
             if carry {
                 cpu.regs.f |= 0x10;
@@ -1559,7 +1554,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let a = cpu.regs.a;
             let old_carry = (cpu.regs.f & 0x10) != 0;
             let new_carry = (a & 0x80) != 0;
-            cpu.regs.a = (a << 1) | (if old_carry { 1 } else { 0 });
+            cpu.regs.a = (a << 1) | u8::from(old_carry);
             cpu.regs.f = 0;
             if new_carry {
                 cpu.regs.f |= 0x10;
@@ -1577,7 +1572,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let a = cpu.regs.a;
             let old_carry = (cpu.regs.f & 0x10) != 0;
             let new_carry = (a & 0x01) != 0;
-            cpu.regs.a = (a >> 1) | (if old_carry { 0x80 } else { 0 });
+            cpu.regs.a = (a >> 1) | u8::from(old_carry);
             cpu.regs.f = 0;
             if new_carry {
                 cpu.regs.f |= 0x10;
@@ -1702,7 +1697,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let old_carry = (cpu.regs.f & 0x10) != 0;
             let new_carry = (value & 0x80) != 0;
 
-            cpu.regs.c = (value << 1) | (if old_carry { 1 } else { 0 });
+            cpu.regs.c = (value << 1) | u8::from(old_carry);
 
             // Update flags
             cpu.regs.f = 0;

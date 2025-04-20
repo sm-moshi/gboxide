@@ -29,42 +29,47 @@ pub struct Flags {
 }
 
 impl Registers {
-    pub fn af(&self) -> u16 {
+    pub const fn af(&self) -> u16 {
         ((self.a as u16) << 8) | (self.f as u16)
     }
+
+    #[allow(clippy::cast_possible_truncation)]
     pub fn set_af(&mut self, val: u16) {
         self.a = (val >> 8) as u8;
         self.f = val as u8 & 0xF0;
     }
 
-    pub fn bc(&self) -> u16 {
+    pub const fn bc(&self) -> u16 {
         ((self.b as u16) << 8) | (self.c as u16)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn set_bc(&mut self, val: u16) {
         self.b = (val >> 8) as u8;
         self.c = val as u8;
     }
 
-    pub fn de(&self) -> u16 {
+    pub const fn de(&self) -> u16 {
         ((self.d as u16) << 8) | (self.e as u16)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn set_de(&mut self, val: u16) {
         self.d = (val >> 8) as u8;
         self.e = val as u8;
     }
 
-    pub fn hl(&self) -> u16 {
+    pub const fn hl(&self) -> u16 {
         ((self.h as u16) << 8) | (self.l as u16)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn set_hl(&mut self, val: u16) {
         self.h = (val >> 8) as u8;
         self.l = val as u8;
     }
 
-    pub fn sp(&self) -> u16 {
+    pub const fn sp(&self) -> u16 {
         self.sp
     }
 
@@ -75,14 +80,14 @@ impl Registers {
     pub fn get_reg(&self, reg: &str) -> u8 {
         match reg {
             "a" => self.a,
-            "f" => self.f,
             "b" => self.b,
             "c" => self.c,
             "d" => self.d,
             "e" => self.e,
             "h" => self.h,
             "l" => self.l,
-            _ => panic!("Invalid register name"),
+            "f" => self.f,
+            _ => panic!("Invalid register"),
         }
     }
 
@@ -100,7 +105,7 @@ impl Registers {
         }
     }
 
-    pub fn flags(&self) -> Flags {
+    pub const fn flags(&self) -> Flags {
         Flags {
             zero: (self.f & 0x80) != 0,
             subtract: (self.f & 0x40) != 0,
@@ -242,13 +247,11 @@ impl CPU {
         self.current_cycles
     }
 
-    /// Get the total number of cycles since boot
-    pub fn get_cycles(&self) -> u64 {
+    pub const fn get_cycles(&self) -> u64 {
         self.cycles
     }
 
-    /// Get the number of cycles for the current/last instruction
-    pub fn get_current_cycles(&self) -> u32 {
+    pub const fn get_current_cycles(&self) -> u32 {
         self.current_cycles
     }
 

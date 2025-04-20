@@ -1,7 +1,6 @@
 /// core-lib/src/cpu/tests.rs
-use crate::cartridge::Cartridge;
 use crate::cpu::CPU;
-use crate::mmu::{MemoryBusTrait, MMU};
+use crate::mmu::MMU;
 
 #[cfg(test)]
 use pretty_assertions::assert_eq;

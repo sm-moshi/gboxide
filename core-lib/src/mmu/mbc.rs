@@ -49,11 +49,9 @@ pub struct Mbc1 {
     ram_bank: u8,
     mode: u8,
     rom_mask: usize,
-    ram_mask: usize,
 }
 
 impl Mbc1 {
-    #[must_use]
     pub fn new(rom: Vec<u8>) -> Self {
         // Calculate ROM size mask based on actual ROM size
         let rom_bank_count = (rom.len() / 0x4000).next_power_of_two();
@@ -61,8 +59,6 @@ impl Mbc1 {
 
         // Calculate RAM size (default to 32KB)
         let ram_total_size = 0x8000; // 32KB
-        let ram_size = ram_total_size / 0x2000;
-        let ram_mask = ram_size - 1;
 
         Self {
             rom,
@@ -73,7 +69,6 @@ impl Mbc1 {
             ram_bank: 0,
             mode: 0,
             rom_mask: rom_addr_mask,
-            ram_mask,
         }
     }
 
@@ -216,7 +211,6 @@ pub struct NoMbc {
 }
 
 impl NoMbc {
-    #[must_use]
     pub fn new(rom: Vec<u8>) -> Self {
         Self {
             rom,

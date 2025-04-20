@@ -1,0 +1,36 @@
+---
+source: core-lib/src/timer/tests.rs
+expression: harness.cycle_log
+---
+[
+  (
+    1,
+    Running,
+    254,
+    false,
+  ),
+  (
+    1025,
+    Running,
+    255,
+    false,
+  ),
+  (
+    1026,
+    Running,
+    255,
+    false,
+  ),
+  (
+    2050,
+    Overflow,
+    0,
+    false,
+  ),
+  (
+    2055,
+    Running,
+    66,
+    true,
+  ),
+]

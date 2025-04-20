@@ -1,5 +1,5 @@
 [workspace]
-members  = ["core-lib", "cli", "common", "tests"] # "gui",
+members  = ["core-lib", "cli", "common"] #  "gui"]
 resolver = "2"
 
 [workspace.package]
@@ -20,6 +20,8 @@ tokio = { version = "1.44.2", features = ["rt-multi-thread", "macros", "time"] }
 wgpu     = "25.0.0"
 image    = "0.25.6"
 bytemuck = { version = "1.22", features = ["derive"] }
+winit    = "0.30.9"
+cpal     = "0.15.3"
 
 dioxus         = { version = "0.6.3", features = ["desktop", "router"] }
 dioxus-desktop = "0.6.3"
@@ -29,12 +31,15 @@ tracing-subscriber = "0.3.19"
 tracing-log        = "0.2.0"
 log                = "0.4.27"
 
-anyhow    = "1.0.98"
-thiserror = "2.0.12"
-bitflags  = "2.9.0"
-
-pretty_assertions = "1.4"
-insta             = { version = "1.42.2", features = ["redactions", "yaml"] }
+anyhow            = "1.0.98"
+thiserror         = "2.0.12"
+bitflags          = "2.9.0"
+bitfield          = "0.19.0"
+pretty_assertions = "1.4.1"
+test-case         = "3.3.1"
+proptest          = "1.6.0"
+insta             = { version = "1.42.2", features = ["redactions", "yaml", "serde"] }
+criterion         = "0.5.1"
 
 serde      = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
@@ -42,6 +47,8 @@ serde_json = "1.0.140"
 getrandom    = { version = "0.3.2", features = ["js"] }
 js-sys       = "0.3.77"
 wasm-bindgen = "0.2.100"
+bincode      = "2.0.1"
+memmap2      = "0.9.5"
 
 [profile.dev]
 opt-level        = 1
@@ -50,6 +57,10 @@ overflow-checks  = true
 lto              = false
 debug-assertions = true
 incremental      = true
+
+[profile.dev.package]
+insta.opt-level   = 3
+similar.opt-level = 3
 
 [profile.release]
 opt-level     = "z"         # size-optimized; use "3" for performance
@@ -68,14 +79,20 @@ strip     = "symbols"
 
 [workspace.lints.clippy]
 # Allowed lints (temporarily noisy false positives)
-module_name_repetitions = "allow"
-missing_errors_doc      = "allow"
-missing_panics_doc      = "allow"
+missing_errors_doc       = "allow"
+missing_panics_doc       = "allow"
+match_same_arms          = "allow"
+verbose_bit_mask         = "allow"
+cast_possible_wrap       = "allow"
+must_use_candidate       = "allow"
+cast_lossless            = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss           = "allow"
 
 # Warning level lints
-missing_docs    = "warn"
-unreachable_pub = "warn"
-unused_results  = "warn"
+# missing_docs    = "warn"
+# unreachable_pub = "warn"
+# unused_results = "warn"
 
 # Lint groups with priorities
 all      = { level = "warn", priority = -1 }

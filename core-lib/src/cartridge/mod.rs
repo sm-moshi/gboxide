@@ -29,10 +29,10 @@ impl TryFrom<u8> for CartridgeType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0x00 => Ok(CartridgeType::RomOnly),
-            0x01 => Ok(CartridgeType::Mbc1),
-            0x02 => Ok(CartridgeType::Mbc1Ram),
-            0x03 => Ok(CartridgeType::Mbc1RamBattery),
+            0x00 => Ok(Self::RomOnly),
+            0x01 => Ok(Self::Mbc1),
+            0x02 => Ok(Self::Mbc1Ram),
+            0x03 => Ok(Self::Mbc1RamBattery),
             0x05..=0xFF => Err(CartridgeError::UnsupportedCartridgeType(value)),
             _ => Err(CartridgeError::InvalidCartridgeType(value)),
         }
@@ -75,7 +75,7 @@ impl Cartridge {
         })
     }
 
-    fn get_rom_size(value: u8) -> usize {
+    const fn get_rom_size(value: u8) -> usize {
         match value {
             0x00 => 32 * 1024,   // 32KB (2 banks)
             0x01 => 64 * 1024,   // 64KB (4 banks)
@@ -90,20 +90,20 @@ impl Cartridge {
         }
     }
 
-    fn get_ram_size(value: u8) -> usize {
+    const fn get_ram_size(value: u8) -> usize {
         match value {
             0x00 => 0,          // No RAM
             0x01 => 2 * 1024,   // 2KB
             0x02 => 8 * 1024,   // 8KB
-            0x03 => 32 * 1024,  // 32KB (4 banks)
-            0x04 => 128 * 1024, // 128KB (16 banks)
-            0x05 => 64 * 1024,  // 64KB (8 banks)
-            0x06 => 0,          // No RAM
+            0x03 => 32 * 1024,  // 32KB (4 banks of 8KB each)
+            0x04 => 128 * 1024, // 128KB (16 banks of 8KB each)
+            0x05 => 64 * 1024,  // 64KB (8 banks of 8KB each)
             _ => 0,             // Default to no RAM
         }
     }
 
     /// Create an appropriate MBC instance based on the cartridge type
+
     pub fn create_mbc(self) -> Box<dyn Mbc> {
         match self.cart_type {
             0x00 => Box::new(NoMbc::new(self.data)),
@@ -117,6 +117,7 @@ impl Cartridge {
     }
 
     /// Get the cartridge title from the ROM header
+
     pub fn title(&self) -> String {
         let title_bytes = &self.data[0x134..=0x143];
         let end = title_bytes.iter().position(|&b| b == 0).unwrap_or(16);
@@ -124,22 +125,26 @@ impl Cartridge {
     }
 
     /// Get the cartridge type
+
     pub fn cartridge_type(&self) -> CartridgeType {
         CartridgeType::try_from(self.cart_type).unwrap()
     }
 
     /// Get the ROM size in bytes
-    pub fn rom_size(&self) -> usize {
+
+    pub const fn rom_size(&self) -> usize {
         self.rom_size
     }
 
     /// Get the RAM size in bytes
-    pub fn ram_size(&self) -> usize {
+
+    pub const fn ram_size(&self) -> usize {
         self.ram_size
     }
 
     /// Check if the cartridge has battery-backed RAM
-    pub fn has_battery(&self) -> bool {
+
+    pub const fn has_battery(&self) -> bool {
         self.has_battery
     }
 
@@ -166,7 +171,7 @@ impl Cartridge {
                 }
             }
 
-            _ => panic!("Invalid cartridge address: {:#06X}", addr),
+            _ => panic!("Invalid cartridge address: {addr:#06X}"),
         }
     }
 
@@ -197,7 +202,7 @@ impl Cartridge {
                 }
             }
 
-            _ => panic!("Invalid cartridge write address: {:#06X}", addr),
+            _ => panic!("Invalid cartridge write address: {addr:#06X}"),
         }
     }
 }

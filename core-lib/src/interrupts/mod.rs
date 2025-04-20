@@ -11,37 +11,33 @@ pub struct Interrupts {
     ime_scheduled: bool,
 }
 
-/// Interrupt bit positions
-#[derive(Debug, Clone, Copy)]
+/// Interrupt flags that can be set by hardware events
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InterruptFlag {
-    VBlank = 0,
-    LcdStat = 1,
-    Timer = 2,
-    Serial = 3,
-    Joypad = 4,
+    VBlank,  // Vertical blanking interval
+    LcdStat, // LCD status triggers
+    Timer,   // Timer overflow
+    Serial,  // Serial transfer completion
+    Joypad,  // Joypad input
 }
 
 impl Interrupts {
-    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Check if any enabled interrupts are pending, regardless of IME
-    #[must_use]
     pub const fn pending_regardless_of_ime(&self) -> bool {
         (self.ie & self.if_) != 0
     }
 
     /// Check if any enabled interrupts are pending
-    #[must_use]
     pub const fn pending(&self) -> bool {
         self.ime && self.pending_regardless_of_ime()
     }
 
     /// Get the highest priority pending interrupt
-    #[must_use]
-    pub fn get_interrupt(&self) -> Option<InterruptFlag> {
+    pub const fn get_interrupt(&self) -> Option<InterruptFlag> {
         if !self.pending() {
             return None;
         }
@@ -84,7 +80,6 @@ impl Interrupts {
     }
 
     /// Get the interrupt vector address for a given interrupt
-    #[must_use]
     pub const fn get_vector(flag: InterruptFlag) -> u16 {
         match flag {
             InterruptFlag::VBlank => 0x0040,
@@ -97,7 +92,6 @@ impl Interrupts {
 
     /// Read the Interrupt Flag (IF) register
     /// Upper 3 bits always read as 1
-    #[must_use]
     pub const fn read_if(&self) -> u8 {
         self.if_ | 0xE0
     }
@@ -110,7 +104,6 @@ impl Interrupts {
 
     /// Read the Interrupt Enable (IE) register
     /// Upper 3 bits always read as 1
-    #[must_use]
     pub const fn read_ie(&self) -> u8 {
         self.ie | 0xE0
     }

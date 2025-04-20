@@ -1,7 +1,8 @@
 /// core-lib/src/mmu/mod.rs
 use crate::cartridge::Cartridge;
 use crate::interrupts::{InterruptFlag, Interrupts};
-use crate::timer::Timer;
+use crate::ppu::{Ppu, PpuMode};
+use crate::timer::{Timer, TimerError, TimerState};
 use thiserror::Error;
 
 pub mod mbc;
@@ -15,12 +16,14 @@ pub enum MmuError {
     InvalidAccess(u16),
     #[error("Cartridge error: {0}")]
     CartridgeError(#[from] crate::cartridge::CartridgeError),
+    #[error("Timer error: {0}")]
+    TimerError(#[from] TimerError),
 }
 
 /// Memory Bus trait for memory access operations
 pub trait MemoryBusTrait {
     fn read(&self, addr: u16) -> u8;
-    fn write(&mut self, addr: u16, value: u8);
+    fn write(&mut self, addr: u16, value: u8) -> Result<(), MmuError>;
 
     /// Get the highest priority pending interrupt
     fn get_interrupt(&self) -> Option<InterruptFlag>;
@@ -40,13 +43,18 @@ pub struct MMU {
     oam: [u8; 0xA0],          // Object Attribute Memory
     io_registers: [u8; 0x80], // Hardware I/O Registers
     hram: [u8; 0x7F],         // High RAM
-    ie_register: u8,          // Interrupt Enable Register
     pub interrupts: Interrupts,
     pub timer: Timer,
+    pub ppu: Ppu,        // Pixel Processing Unit
+    dma_active: bool,    // Whether DMA is currently active
+    dma_start_addr: u16, // Source address for DMA
+    dma_cycles: u32,     // Remaining cycles for DMA
+    dma_byte: u8,        // Current byte being transferred in DMA
 }
 
+#[allow(clippy::cast_possible_truncation)] // Intentional truncation for DMA cycles and memory addressing
 impl MMU {
-    #[must_use]
+    #[must_use = "Returns a new MMU instance or an error if initialization fails"]
     pub fn new(rom: Vec<u8>) -> Result<Self, MmuError> {
         let cartridge = Cartridge::new(rom)?;
         Ok(Self {
@@ -56,104 +64,228 @@ impl MMU {
             oam: [0; 0xA0],
             io_registers: [0; 0x80],
             hram: [0; 0x7F],
-            ie_register: 0,
             interrupts: Interrupts::new(),
             timer: Timer::new(),
+            ppu: Ppu::new(),
+            dma_active: false,
+            dma_start_addr: 0,
+            dma_cycles: 0,
+            dma_byte: 0,
         })
     }
 
+    /// Start a DMA transfer from the given source address
+    fn start_dma(&mut self, value: u8) {
+        self.dma_active = true;
+        self.dma_start_addr = u16::from(value) << 8;
+        self.dma_cycles = 160; // 160 M-cycles for DMA
+        self.dma_byte = 0;
+    }
+
+    /// Process DMA transfer for the given number of cycles
+    fn process_dma(&mut self, cycles: u32) {
+        if !self.dma_active || self.dma_cycles == 0 {
+            return;
+        }
+
+        // Process one byte per cycle
+        let bytes_to_transfer = cycles.min(self.dma_cycles) as usize;
+        for _ in 0..bytes_to_transfer {
+            let source_addr = self.dma_start_addr + u16::from(self.dma_byte);
+            let data = match source_addr {
+                0x0000..=0x7FFF => self.mbc.read(source_addr).unwrap_or(0),
+                0x8000..=0x9FFF => self.vram[(source_addr - 0x8000) as usize],
+                0xA000..=0xBFFF => self.mbc.read(source_addr).unwrap_or(0),
+                0xC000..=0xDFFF => self.wram[(source_addr - 0xC000) as usize],
+                0xE000..=0xFDFF => self.wram[(source_addr - 0xE000) as usize],
+                _ => 0xFF,
+            };
+            self.oam[self.dma_byte as usize] = data;
+            self.dma_byte = self.dma_byte.wrapping_add(1);
+
+            // DMA transfer is complete when we've transferred all 160 bytes
+            if self.dma_byte >= 0xA0 {
+                self.dma_active = false;
+                self.dma_cycles = 0;
+                break;
+            }
+        }
+
+        self.dma_cycles = self.dma_cycles.saturating_sub(bytes_to_transfer as u32);
+    }
+
+    /// Read a byte from memory
     pub fn read(&self, addr: u16) -> u8 {
+        // During DMA, only HRAM is accessible
+        if self.dma_active && (addr < 0xFF80 || addr > 0xFFFE) && addr != 0xFF46 {
+            return 0xFF;
+        }
+
         match addr {
-            // ROM Banks
-            0x0000..=0x7FFF | 0xA000..=0xBFFF => self.mbc.read(addr).unwrap_or(0xFF),
+            // ROM bank 0 (0x0000-0x3FFF)
+            0x0000..=0x3FFF => self.mbc.read(addr).unwrap_or(0xFF),
 
-            // VRAM
-            0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize],
+            // ROM bank 1-N (0x4000-0x7FFF)
+            0x4000..=0x7FFF => self.mbc.read(addr).unwrap_or(0xFF),
 
-            // WRAM
+            // VRAM (0x8000-0x9FFF)
+            0x8000..=0x9FFF => match self.ppu.get_mode() {
+                PpuMode::PixelTransfer => 0xFF,
+                _ => self.vram[(addr - 0x8000) as usize],
+            },
+
+            // External RAM (0xA000-0xBFFF)
+            0xA000..=0xBFFF => self.mbc.read(addr).unwrap_or(0xFF),
+
+            // Working RAM (0xC000-0xDFFF)
             0xC000..=0xDFFF => self.wram[(addr - 0xC000) as usize],
 
-            // Echo RAM (mirrors WRAM)
+            // Echo RAM (0xE000-0xFDFF)
             0xE000..=0xFDFF => self.wram[(addr - 0xE000) as usize],
 
-            // OAM
-            0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize],
+            // OAM (0xFE00-0xFE9F)
+            0xFE00..=0xFE9F => {
+                if self.dma_active {
+                    0xFF
+                } else {
+                    match self.ppu.get_mode() {
+                        PpuMode::OamSearch | PpuMode::PixelTransfer => 0xFF,
+                        _ => self.oam[(addr - 0xFE00) as usize],
+                    }
+                }
+            }
 
-            // Timer Registers
-            0xFF04..=0xFF07 => self.timer.read(addr),
+            // Unused (0xFEA0-0xFEFF)
+            0xFEA0..=0xFEFF => 0xFF,
 
-            // Interrupt Flag
-            0xFF0F => self.interrupts.read_if(),
+            // I/O registers (0xFF00-0xFF7F)
+            0xFF00..=0xFF7F => {
+                match addr {
+                    // PPU Registers
+                    0xFF40..=0xFF45 | 0xFF47..=0xFF4B => self.ppu.read(addr).unwrap_or(0xFF),
 
-            // I/O Registers
-            0xFF00..=0xFF7F => self.io_registers[(addr - 0xFF00) as usize],
+                    // DMA Register
+                    0xFF46 => (self.dma_start_addr >> 8) as u8,
 
-            // High RAM
+                    // Timer Registers
+                    0xFF04..=0xFF07 => self.timer.read(addr).unwrap_or(0xFF),
+
+                    // Other I/O
+                    _ => self.io_registers[(addr - 0xFF00) as usize],
+                }
+            }
+
+            // High RAM (0xFF80-0xFFFE)
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
 
-            // Interrupt Enable Register
+            // Interrupt Enable Register (0xFFFF)
             0xFFFF => self.interrupts.read_ie(),
-
-            _ => 0xFF,
         }
     }
 
-    pub fn write(&mut self, addr: u16, value: u8) {
+    /// Write a byte to memory
+    pub fn write(&mut self, addr: u16, value: u8) -> Result<(), MmuError> {
+        // During DMA, only HRAM is accessible
+        if self.dma_active && (addr < 0xFF80 || addr > 0xFFFE) && addr != 0xFF46 {
+            return Ok(());
+        }
+
         match addr {
-            // ROM Banks and External RAM
-            0x0000..=0x7FFF | 0xA000..=0xBFFF => {
-                let _ = self.mbc.write(addr, value);
+            // ROM bank 0 (0x0000-0x3FFF)
+            0x0000..=0x3FFF => self.mbc.write(addr, value)?,
+
+            // ROM bank 1-N (0x4000-0x7FFF)
+            0x4000..=0x7FFF => self.mbc.write(addr, value)?,
+
+            // VRAM (0x8000-0x9FFF)
+            0x8000..=0x9FFF => {
+                if self.ppu.get_mode() != PpuMode::PixelTransfer {
+                    self.vram[(addr - 0x8000) as usize] = value;
+                }
             }
 
-            // VRAM
-            0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize] = value,
+            // External RAM (0xA000-0xBFFF)
+            0xA000..=0xBFFF => self.mbc.write(addr, value)?,
 
-            // WRAM
-            0xC000..=0xDFFF => self.wram[(addr - 0xC000) as usize] = value,
+            // Working RAM (0xC000-0xDFFF)
+            0xC000..=0xDFFF => {
+                self.wram[(addr - 0xC000) as usize] = value;
+            }
 
-            // Echo RAM (mirrors WRAM)
-            0xE000..=0xFDFF => self.wram[(addr - 0xE000) as usize] = value,
+            // Echo RAM (0xE000-0xFDFF)
+            0xE000..=0xFDFF => {
+                self.wram[(addr - 0xE000) as usize] = value;
+            }
 
-            // OAM
-            0xFE00..=0xFE9F => self.oam[(addr - 0xFE00) as usize] = value,
+            // OAM (0xFE00-0xFE9F)
+            0xFE00..=0xFE9F => {
+                if !self.dma_active
+                    && self.ppu.get_mode() != PpuMode::OamSearch
+                    && self.ppu.get_mode() != PpuMode::PixelTransfer
+                {
+                    self.oam[(addr - 0xFE00) as usize] = value;
+                }
+            }
 
-            // Timer Registers
-            0xFF04..=0xFF07 => self.timer.write(addr, value),
+            // Unused (0xFEA0-0xFEFF)
+            0xFEA0..=0xFEFF => {}
 
-            // Interrupt Flag
-            0xFF0F => self.interrupts.write_if(value),
+            // I/O registers (0xFF00-0xFF7F)
+            0xFF00..=0xFF7F => {
+                match addr {
+                    // PPU Registers
+                    0xFF40..=0xFF45 | 0xFF47..=0xFF4B => {
+                        let _ = self.ppu.write(addr, value);
+                    }
 
-            // I/O Registers
-            0xFF00..=0xFF7F => self.io_registers[(addr - 0xFF00) as usize] = value,
+                    // DMA Register
+                    0xFF46 => self.start_dma(value),
 
-            // High RAM
-            0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = value,
+                    // Timer Registers
+                    0xFF04..=0xFF07 => {
+                        let _ = self.timer.write(addr, value);
+                    }
 
-            // Interrupt Enable Register
+                    // Other I/O
+                    _ => {
+                        self.io_registers[(addr - 0xFF00) as usize] = value;
+                    }
+                }
+            }
+
+            // High RAM (0xFF80-0xFFFE)
+            0xFF80..=0xFFFE => {
+                self.hram[(addr - 0xFF80) as usize] = value;
+            }
+
+            // Interrupt Enable Register (0xFFFF)
             0xFFFF => self.interrupts.write_ie(value),
-
-            _ => {}
         }
+        Ok(())
     }
 
     pub fn step(&mut self, cycles: u32) {
-        if self.timer.step(cycles) {
-            self.interrupts.request(InterruptFlag::Timer);
+        self.process_dma(cycles);
+
+        // Handle timer step and possible interrupt
+        if let Ok(state) = self.timer.step(cycles) {
+            if state == TimerState::Reloading && self.timer.get_interrupt_flag() {
+                self.interrupts.request(InterruptFlag::Timer);
+                self.timer.clear_interrupt_flag();
+            }
+        }
+
+        if let Some(interrupt) = self.ppu.step(cycles) {
+            self.interrupts.request(interrupt);
         }
     }
 
-    #[must_use]
     pub fn save_ram(&self) -> Vec<u8> {
         self.mbc.save_ram()
     }
 
-    /// Load a RAM state
     pub fn load_ram(&mut self, data: Vec<u8>) -> Result<(), MbcError> {
         self.mbc.load_ram(data)
-    }
-
-    pub fn write_byte(&mut self, addr: u16, value: u8) {
-        self.write(addr, value);
     }
 }
 
@@ -162,8 +294,8 @@ impl MemoryBusTrait for MMU {
         self.read(addr)
     }
 
-    fn write(&mut self, addr: u16, value: u8) {
-        self.write(addr, value);
+    fn write(&mut self, addr: u16, value: u8) -> Result<(), MmuError> {
+        self.write(addr, value)
     }
 
     fn get_interrupt(&self) -> Option<InterruptFlag> {
@@ -171,7 +303,7 @@ impl MemoryBusTrait for MMU {
     }
 
     fn clear_interrupt(&mut self, flag: InterruptFlag) {
-        self.interrupts.clear(flag)
+        self.interrupts.clear(flag);
     }
 
     fn get_interrupt_vector(&self, flag: InterruptFlag) -> u16 {
