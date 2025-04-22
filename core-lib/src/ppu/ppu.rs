@@ -1,3 +1,4 @@
+use crate::helpers::{extract_colour_index, tile_data_address, unpack_tile_attributes};
 /// core-lib/src/ppu/ppu.rs
 use crate::interrupts::InterruptFlag;
 
@@ -45,22 +46,22 @@ impl Sprite {
     /// Check if this sprite has priority over the background
     /// When this bit is 0, sprite has priority
     /// When this bit is 1, sprite is behind colors 1-3 of BG/Window
-    pub fn has_priority(&self) -> bool {
+    pub const fn has_priority(&self) -> bool {
         !SpriteAttributes::from_bits_truncate(self.attributes).contains(SpriteAttributes::PRIORITY)
     }
 
     /// Check if this sprite is flipped horizontally (X)
-    pub fn is_x_flipped(&self) -> bool {
+    pub const fn is_x_flipped(&self) -> bool {
         SpriteAttributes::from_bits_truncate(self.attributes).contains(SpriteAttributes::X_FLIP)
     }
 
     /// Check if this sprite is flipped vertically (Y)
-    pub fn is_y_flipped(&self) -> bool {
+    pub const fn is_y_flipped(&self) -> bool {
         SpriteAttributes::from_bits_truncate(self.attributes).contains(SpriteAttributes::Y_FLIP)
     }
 
     /// Get the palette for this sprite (0 or 1)
-    pub fn palette(&self) -> u8 {
+    pub const fn palette(&self) -> u8 {
         if SpriteAttributes::from_bits_truncate(self.attributes).contains(SpriteAttributes::PALETTE)
         {
             1
@@ -70,12 +71,12 @@ impl Sprite {
     }
 
     /// Get the adjusted Y position
-    pub fn y_position(&self) -> i32 {
+    pub const fn y_position(&self) -> i32 {
         self.y_pos as i32 - 16
     }
 
     /// Get the adjusted X position
-    pub fn x_position(&self) -> i32 {
+    pub const fn x_position(&self) -> i32 {
         self.x_pos as i32 - 8
     }
 }
@@ -111,8 +112,10 @@ pub struct Ppu {
     pub(crate) window_line: u8,  // Current window line (internal counter)
 
     // Frame buffer
-    pub frame_buffer: Box<[Color; SCREEN_WIDTH * SCREEN_HEIGHT]>,
+    pub frame_buffer: Box<[Color]>,
     pub frame_ready: bool, // Flag indicating a new frame is ready
+
+    pub is_cgb: bool, // True if running in CGB mode
 }
 
 impl Default for Ppu {
@@ -134,13 +137,14 @@ impl Default for Ppu {
             mode: PpuMode::OamSearch,
             mode_cycles: 0,
             window_line: 0,
-            frame_buffer: Box::new([Color::WHITE; SCREEN_WIDTH * SCREEN_HEIGHT]),
+            frame_buffer: vec![Color::WHITE; SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
             frame_ready: false,
             vram_bank: 0,
             bgp_index: 0,
             bgp_data: [0; 64],
             obp_index: 0,
             obp_data: [0; 64],
+            is_cgb: false,
         }
     }
 }
@@ -165,7 +169,7 @@ impl Ppu {
     }
 
     /// Check if a STAT interrupt should be triggered
-    pub(crate) fn check_stat_interrupt(&self) -> bool {
+    pub(crate) const fn check_stat_interrupt(&self) -> bool {
         match self.mode {
             PpuMode::HBlank => self.stat.contains(LcdStatus::HBLANK_INTERRUPT),
             PpuMode::VBlank => self.stat.contains(LcdStatus::VBLANK_INTERRUPT),
@@ -175,7 +179,7 @@ impl Ppu {
     }
 
     /// Check if an LYC=LY interrupt should be triggered
-    pub(crate) fn check_lyc_interrupt(&self) -> bool {
+    pub(crate) const fn check_lyc_interrupt(&self) -> bool {
         self.stat.contains(LcdStatus::LYC_EQUAL_LY) && self.stat.contains(LcdStatus::LYC_INTERRUPT)
     }
 
@@ -198,7 +202,36 @@ impl Ppu {
         self.window_line = 0;
     }
 
+    /// Helper: Lookup CGB BG palette colour (stub, assumes palette 0)
+    fn cgb_bg_color(&self, color_idx: u8, palette_num: u8) -> Color {
+        // Each palette is 8 bytes (4 colours, 2 bytes each, little endian)
+        let base = (palette_num as usize) * 8 + (color_idx as usize) * 2;
+        let lo = self.bgp_data.get(base).copied().unwrap_or(0);
+        let hi = self.bgp_data.get(base + 1).copied().unwrap_or(0);
+        let rgb15 = ((hi as u16) << 8) | (lo as u16);
+        // Convert 15-bit BGR to 24-bit RGB
+        let r = ((rgb15 & 0x1F) << 3) as u8;
+        let g = (((rgb15 >> 5) & 0x1F) << 3) as u8;
+        let b = (((rgb15 >> 10) & 0x1F) << 3) as u8;
+        Color { r, g, b, a: 0xFF }
+    }
+
+    /// Helper: Lookup CGB OBJ palette colour (stub, assumes palette 0)
+    fn cgb_obj_color(&self, color_idx: u8, palette_num: u8) -> Color {
+        // Each palette is 8 bytes (4 colours, 2 bytes each, little endian)
+        let base = (palette_num as usize) * 8 + (color_idx as usize) * 2;
+        let lo = self.obp_data.get(base).copied().unwrap_or(0);
+        let hi = self.obp_data.get(base + 1).copied().unwrap_or(0);
+        let rgb15 = ((hi as u16) << 8) | (lo as u16);
+        let r = ((rgb15 & 0x1F) << 3) as u8;
+        let g = (((rgb15 >> 5) & 0x1F) << 3) as u8;
+        let b = (((rgb15 >> 10) & 0x1F) << 3) as u8;
+        Color { r, g, b, a: 0xFF }
+    }
+
     /// Render the window for the current scanline
+    ///
+    /// Note: The `_priority` variable is extracted for future CGB compatibility and to document the attribute layout, but is currently unused. Prefixing with underscore silences warnings. 🦀
     fn render_window(&mut self) {
         // Check if window is visible on this scanline
         if self.ly < self.wy || self.wx > 166 {
@@ -218,6 +251,7 @@ impl Ppu {
         } else {
             0x1000u16 // 0x9000 (signed tile indices)
         };
+        let signed = !self.lcdc.contains(LcdControl::BG_WINDOW_TILE_DATA);
 
         // Calculate Y position in the window
         let window_y = self.window_line;
@@ -246,25 +280,50 @@ impl Ppu {
             let tile_map_addr = window_tilemap_base + tile_y * 32 + tile_x;
             let tile_id = self.vram[tile_map_addr as usize];
 
-            // Calculate tile data address (depends on addressing mode)
-            let tile_addr = if self.lcdc.contains(LcdControl::BG_WINDOW_TILE_DATA) {
-                tiledata_base + (tile_id as u16) * 16
+            // CGB: Read tile attributes for palette, bank, flipping, priority
+            let (palette_num, vram_bank, x_flip, y_flip, _priority) = if self.is_cgb {
+                let attr = self
+                    .vram
+                    .get(tile_map_addr as usize + 0x2000)
+                    .copied()
+                    .unwrap_or(0);
+                unpack_tile_attributes(attr)
             } else {
-                // Signed addressing: 0x9000 + (-128..127)
-                tiledata_base + ((tile_id as i8 as i16 + 128) as u16) * 16
+                (0, 0, false, false, false)
             };
 
-            // Get the specific line of the tile
-            let tile_line_addr = tile_addr + (tile_y_offset as u16) * 2;
-            let tile_data_low = self.vram[tile_line_addr as usize];
-            let tile_data_high = self.vram[tile_line_addr as usize + 1];
+            // Calculate tile data address (depends on addressing mode)
+            let tile_addr = tile_data_address(tiledata_base, tile_id, signed);
 
-            // Extract the specific pixel color
-            let bit = 7 - tile_x_offset;
-            let color_idx = ((tile_data_high >> bit) & 1) << 1 | ((tile_data_low >> bit) & 1);
+            // CGB: Use correct VRAM bank for tile data
+            let vram_offset = if self.is_cgb && vram_bank == 1 {
+                0x2000
+            } else {
+                0
+            };
 
-            // Get the color from the palette
-            let color = Color::from_palette(color_idx, self.bgp);
+            let tile_line = if self.is_cgb && y_flip {
+                7 - tile_y_offset
+            } else {
+                tile_y_offset
+            };
+
+            let tile_line_addr = tile_addr + (tile_line as u16) * 2;
+            let tile_data_low = self.vram[vram_offset + tile_line_addr as usize];
+            let tile_data_high = self.vram[vram_offset + tile_line_addr as usize + 1];
+
+            let bit = if self.is_cgb && x_flip {
+                tile_x_offset
+            } else {
+                7 - tile_x_offset
+            } as u8;
+            let color_idx = extract_colour_index(tile_data_low, tile_data_high, bit);
+
+            let color = if self.is_cgb {
+                self.cgb_bg_color(color_idx, palette_num)
+            } else {
+                Color::from_palette(color_idx, self.bgp)
+            };
             self.frame_buffer[scanline_offset + x] = color;
         }
 
@@ -417,6 +476,7 @@ impl Ppu {
         } else {
             0x1000u16 // 0x9000 (signed tile indices)
         };
+        let signed = !self.lcdc.contains(LcdControl::BG_WINDOW_TILE_DATA);
 
         // Calculate Y position in the background map
         let y_pos = (self.ly as u16 + self.scy as u16) & 0xFF;
@@ -426,36 +486,59 @@ impl Ppu {
         // Calculate offset in the frame buffer for this scanline
         let scanline_offset = self.ly as usize * SCREEN_WIDTH;
 
-        // Render all 160 pixels in the scanline
         for x in 0..SCREEN_WIDTH {
-            // Calculate X position in the background map
             let x_pos = (x as u16 + self.scx as u16) & 0xFF;
             let tile_x = x_pos / 8;
             let tile_x_offset = x_pos % 8;
 
-            // Calculate tile map address
             let tile_map_addr = tilemap_base + tile_y * 32 + tile_x;
             let tile_id = self.vram[tile_map_addr as usize];
 
-            // Calculate tile data address (depends on addressing mode)
-            let tile_addr = if self.lcdc.contains(LcdControl::BG_WINDOW_TILE_DATA) {
-                tiledata_base + (tile_id as u16) * 16
+            // CGB: Read tile attributes for palette, bank, flipping, priority
+            let (palette_num, vram_bank, x_flip, y_flip, _priority) = if self.is_cgb {
+                // Attribute map is at 0x2000 offset in VRAM
+                let attr = self
+                    .vram
+                    .get(tile_map_addr as usize + 0x2000)
+                    .copied()
+                    .unwrap_or(0);
+                unpack_tile_attributes(attr)
             } else {
-                // Signed addressing: 0x9000 + (-128..127)
-                tiledata_base + ((tile_id as i8 as i16 + 128) as u16) * 16
+                (0, 0, false, false, false)
             };
 
-            // Get the specific line of the tile
-            let tile_line_addr = tile_addr + (tile_y_offset as u16) * 2;
-            let tile_data_low = self.vram[tile_line_addr as usize];
-            let tile_data_high = self.vram[tile_line_addr as usize + 1];
+            // Calculate tile data address (depends on addressing mode)
+            let tile_addr = tile_data_address(tiledata_base, tile_id, signed);
 
-            // Extract the specific pixel color
-            let bit = 7 - tile_x_offset;
-            let color_idx = ((tile_data_high >> bit) & 1) << 1 | ((tile_data_low >> bit) & 1);
+            // CGB: Use correct VRAM bank for tile data
+            let vram_offset = if self.is_cgb && vram_bank == 1 {
+                0x2000
+            } else {
+                0
+            };
 
-            // Get the color from the palette
-            let color = Color::from_palette(color_idx, self.bgp);
+            let tile_line = if self.is_cgb && y_flip {
+                7 - tile_y_offset
+            } else {
+                tile_y_offset
+            };
+
+            let tile_line_addr = tile_addr + (tile_line as u16) * 2;
+            let tile_data_low = self.vram[vram_offset + tile_line_addr as usize];
+            let tile_data_high = self.vram[vram_offset + tile_line_addr as usize + 1];
+
+            let bit = if self.is_cgb && x_flip {
+                tile_x_offset
+            } else {
+                7 - tile_x_offset
+            } as u8;
+            let color_idx = extract_colour_index(tile_data_low, tile_data_high, bit);
+
+            let color = if self.is_cgb {
+                self.cgb_bg_color(color_idx, palette_num)
+            } else {
+                Color::from_palette(color_idx, self.bgp)
+            };
             self.frame_buffer[scanline_offset + x] = color;
         }
     }
@@ -495,9 +578,22 @@ impl Ppu {
             let y_pos = sprite.y_position();
             let x_pos = sprite.x_position();
 
+            // CGB: Read OAM attribute for palette, bank, flipping, priority
+            let (palette_num, vram_bank, x_flip, y_flip, _priority) = if self.is_cgb {
+                unpack_tile_attributes(sprite.attributes)
+            } else {
+                (
+                    0,
+                    0,
+                    sprite.is_x_flipped(),
+                    sprite.is_y_flipped(),
+                    !sprite.has_priority(),
+                )
+            };
+
             // Calculate which line of the sprite we're drawing
             let mut line = (self.ly as i32 - y_pos) as u8;
-            if sprite.is_y_flipped() {
+            if y_flip {
                 line = (sprite_height - 1) - line;
             }
 
@@ -509,8 +605,15 @@ impl Ppu {
                 u16::from(sprite.tile_idx) * 16 + u16::from(line) * 2
             };
 
-            let low_byte = self.vram[tile_addr as usize];
-            let high_byte = self.vram[(tile_addr + 1) as usize];
+            // CGB: Use correct VRAM bank for tile data
+            let vram_offset = if self.is_cgb && vram_bank == 1 {
+                0x2000
+            } else {
+                0
+            };
+
+            let low_byte = self.vram[vram_offset + tile_addr as usize];
+            let high_byte = self.vram[vram_offset + (tile_addr + 1) as usize];
 
             // Draw each pixel of the sprite line
             for x in 0..8 {
@@ -519,25 +622,28 @@ impl Ppu {
                     continue;
                 }
 
-                let bit = if sprite.is_x_flipped() { x } else { 7 - x };
-                let color_idx = ((high_byte >> bit) & 1) << 1 | ((low_byte >> bit) & 1);
+                let bit = if x_flip { x } else { 7 - x } as u8;
+                let color_idx = extract_colour_index(low_byte, high_byte, bit);
 
                 // Skip transparent pixels (color 0)
                 if color_idx == 0 {
                     continue;
                 }
 
-                let palette = if sprite.palette() == 0 {
-                    self.obp0
+                let color = if self.is_cgb {
+                    self.cgb_obj_color(color_idx, palette_num)
                 } else {
-                    self.obp1
+                    let palette = if sprite.palette() == 0 {
+                        self.obp0
+                    } else {
+                        self.obp1
+                    };
+                    Color::from_palette(color_idx, palette)
                 };
-
-                let color = Color::from_palette(color_idx, palette);
                 let pixel_index = self.ly as usize * SCREEN_WIDTH + screen_x as usize;
 
                 // Check sprite priority
-                if !sprite.has_priority() {
+                if (self.is_cgb && _priority) || (!self.is_cgb && !sprite.has_priority()) {
                     // Only draw if background is white (color 0)
                     let bg_color = self.frame_buffer[pixel_index];
                     if bg_color == Color::WHITE {
@@ -738,7 +844,7 @@ impl Ppu {
     }
 
     /// Check if a new frame is ready
-    pub fn is_frame_ready(&self) -> bool {
+    pub const fn is_frame_ready(&self) -> bool {
         self.frame_ready
     }
 

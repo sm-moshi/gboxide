@@ -1,0 +1,27 @@
+# Integration test crate for gboxide emulator
+# Provides Mooneye GB and other hardware-accuracy test harnesses
+
+[package]
+name    = "tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+core-lib           = { path = "../core-lib" }
+anyhow             = { workspace = true }
+thiserror          = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+log                = { workspace = true }
+pretty_assertions  = { workspace = true }
+bitflags           = { workspace = true }
+serde              = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+# Advanced testing tools
+insta     = { workspace = true }
+proptest  = { workspace = true }
+criterion = { workspace = true }
+# Add any additional test-only dependencies here
+
+# [lib] or [bin] section is not required for integration test crates

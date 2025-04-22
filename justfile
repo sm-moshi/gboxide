@@ -10,6 +10,7 @@ build:
 release:
     cargo build --release --workspace
 
+# Run all tests (unit, integration, Mooneye)
 test:
     cargo test --workspace
 

@@ -1,7 +1,11 @@
+use crate::mmu::MMU;
+use crate::Interrupts;
 /// core-lib/src/cpu/mod.rs
 use crate::MemoryBusTrait;
 mod opcodes;
 pub use opcodes::OPCODES;
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Default)]
 pub struct Registers {
@@ -159,48 +163,32 @@ impl CPU {
     }
 
     pub fn step(&mut self, bus: &mut dyn MemoryBusTrait) -> u32 {
-        // Reset current instruction cycles
+        static STEP_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let step = STEP_COUNT.fetch_add(1, Ordering::Relaxed);
+
         self.current_cycles = 0;
-
-        // Check for interrupts
         if let Some(interrupt) = bus.get_interrupt() {
-            // Exit HALT mode
             self.halted = false;
-
-            // If IME is enabled, handle the interrupt
             if self.ime {
                 self.ime = false;
-
-                // Push current PC onto stack (2 M-cycles)
                 self.regs.sp = self.regs.sp.wrapping_sub(1);
-                bus.write(self.regs.sp, (self.regs.pc >> 8) as u8);
+                let _ = bus.write(self.regs.sp, (self.regs.pc >> 8) as u8);
                 self.regs.sp = self.regs.sp.wrapping_sub(1);
-                bus.write(self.regs.sp, self.regs.pc as u8);
-
-                // Clear the interrupt flag
+                let _ = bus.write(self.regs.sp, self.regs.pc as u8);
                 bus.clear_interrupt(interrupt);
-
-                // Jump to interrupt vector (1 M-cycle)
                 self.regs.pc = bus.get_interrupt_vector(interrupt);
-
-                // Total: 5 M-cycles (20 T-cycles)
                 self.current_cycles = 20;
                 self.cycles += u64::from(self.current_cycles);
                 return self.current_cycles;
             }
         }
-
-        // If halted, consume 4 cycles and return
         if self.halted {
             self.current_cycles = 4;
             self.cycles += u64::from(self.current_cycles);
             return self.current_cycles;
         }
-
-        // Fetch opcode
         let opcode = bus.read(self.regs.pc);
         self.regs.pc = self.regs.pc.wrapping_add(1);
-
         #[cfg(debug_assertions)]
         println!("Fetched opcode {:#04x} at PC {:#06x}", opcode, self.regs.pc);
         #[cfg(debug_assertions)]
@@ -208,9 +196,7 @@ impl CPU {
             "Before execution: A = {:#04x}, B = {:#04x}, F = {:#04x}",
             self.regs.a, self.regs.b, self.regs.f
         );
-
         let op = if opcode == 0xCB {
-            // Handle CB prefix opcodes
             let cb_opcode = bus.read(self.regs.pc);
             self.regs.pc = self.regs.pc.wrapping_add(1);
             #[cfg(debug_assertions)]
@@ -227,22 +213,40 @@ impl CPU {
             );
             &opcodes::OPCODES[opcode as usize]
         };
-
         let condition_met = (op.exec)(self, bus);
         self.current_cycles = op.base_cycles;
-
-        // Add conditional cycles if condition was met
         if condition_met {
             self.current_cycles += op.conditional_cycles;
         }
-
         #[cfg(debug_assertions)]
         println!(
             "After execution: A = {:#04x}, B = {:#04x}, F = {:#04x}",
             self.regs.a, self.regs.b, self.regs.f
         );
-
-        // Update total cycles
+        if step < 2000 {
+            println!(
+                "[TRACE] Step {}: PC={:04X} OPCODE={:02X} A={:02X} F={:02X} B={:02X} C={:02X} D={:02X} E={:02X} H={:02X} L={:02X} SP={:04X} Z={} N={} H={} C={}",
+                step,
+                self.regs.pc.wrapping_sub(1),
+                opcode,
+                self.regs.a,
+                self.regs.f,
+                self.regs.b,
+                self.regs.c,
+                self.regs.d,
+                self.regs.e,
+                self.regs.h,
+                self.regs.l,
+                self.regs.sp,
+                (self.regs.f & 0x80) != 0,
+                (self.regs.f & 0x40) != 0,
+                (self.regs.f & 0x20) != 0,
+                (self.regs.f & 0x10) != 0,
+            );
+        }
+        if let Some(interrupts) = bus.interrupts_mut() {
+            interrupts.borrow_mut().update_ime();
+        }
         self.cycles += u64::from(self.current_cycles);
         self.current_cycles
     }

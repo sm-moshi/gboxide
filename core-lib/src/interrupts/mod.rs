@@ -12,7 +12,7 @@ pub struct Interrupts {
 }
 
 /// Interrupt flags that can be set by hardware events
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptFlag {
     VBlank,  // Vertical blanking interval
     LcdStat, // LCD status triggers

@@ -1,0 +1,6 @@
+[build]
+target-dir = "target"
+rustflags  = ["-C", "target-cpu=native"]
+
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen"

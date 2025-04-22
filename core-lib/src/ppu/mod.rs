@@ -64,7 +64,7 @@ pub enum PpuMode {
 }
 
 impl PpuMode {
-    /// Convert from raw mode value to PpuMode enum
+    /// Convert from raw mode value to `PpuMode` enum
     pub const fn from_mode(mode: u8) -> Self {
         match mode & 0x3 {
             0 => Self::HBlank,

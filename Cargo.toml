@@ -1,5 +1,5 @@
 [workspace]
-members  = ["core-lib", "cli", "common"] #  "gui"]
+members  = ["core-lib", "cli", "common", "tests"] #  "gui"]
 resolver = "2"
 
 [workspace.package]
@@ -22,6 +22,7 @@ image    = "0.25.6"
 bytemuck = { version = "1.22", features = ["derive"] }
 winit    = "0.30.9"
 cpal     = "0.15.3"
+clap     = { version = "4.5.37", features = ["derive"] }
 
 dioxus         = { version = "0.6.3", features = ["desktop", "router"] }
 dioxus-desktop = "0.6.3"

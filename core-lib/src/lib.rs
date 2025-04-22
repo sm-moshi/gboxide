@@ -2,6 +2,7 @@
 pub mod bus;
 pub mod cartridge;
 pub mod cpu;
+pub mod helpers;
 pub mod interrupts;
 pub mod mmu;
 pub mod ppu;

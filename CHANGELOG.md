@@ -79,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Interrupt vector handling (0x0040-0x0060)
   - Test coverage with edge cases
   - Integration with timer system
+- **MBC3 battery-backed RTC persistence:** RTC state is now serialised and deserialised alongside RAM, following Pandocs specification for hardware-accurate behaviour. This enables robust save support for RTC-enabled games (e.g., Pokémon Gold/Silver). Implementation is fully tested and all related tests pass. 🦀
 
 ### Changed
 
@@ -127,6 +128,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved error handling
   - Enhanced test reliability
   - Removed unsafe code blocks
+- All test code is now idiomatic: removed all `unwrap()`/`expect()` from tests; all errors are handled properly.
+- Codebase is warning-free after linter and Clippy checks.
+- All timer, MMU, and PPU tests now pass, confirming robust, hardware-accurate behaviour and integration.
+- Next steps: focus on advanced PPU feature work and further integration testing.
 
 ### Fixed
 

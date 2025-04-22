@@ -1,0 +1,9 @@
+[submodule "assets/gb-bootroms"]
+	path = assets/gb-bootroms
+	url = git@github.com:ISSOtm/gb-bootroms.git
+[submodule "assets/mooneye-test-suite"]
+	path = assets/mooneye-test-suite
+	url = git@github.com:Gekkio/mooneye-test-suite.git
+[submodule ".idea/mooneye-gb"]
+	path = .idea/mooneye-gb
+	url = git@github.com:Gekkio/mooneye-gb.git

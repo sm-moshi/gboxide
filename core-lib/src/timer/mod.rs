@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 /// core-lib/src/timer/mod.rs
 ///
 /// # Timer Module
@@ -26,27 +27,7 @@
 /// The timer operates based on edge detection of specific bits in the DIV counter,
 /// depending on the frequency selected in TAC.
 use bitflags::bitflags;
-use thiserror::Error;
 use tracing::{debug, instrument, trace};
-
-/// Timer-specific errors for robust error handling
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum TimerError {
-    #[error("Timer overflow without delay")]
-    MissingOverflowDelay,
-
-    #[error("Invalid timer frequency: {0}")]
-    InvalidFrequency(u8),
-
-    #[error("Timer state transition error: {from:?} -> {to:?}")]
-    InvalidStateTransition { from: TimerState, to: TimerState },
-
-    #[error("Timer hardware error: {0}")]
-    HardwareError(String),
-}
-
-/// Result type for timer operations
-pub type Result<T> = std::result::Result<T, TimerError>;
 
 bitflags! {
     #[derive(Default, Clone, Copy)]
@@ -104,13 +85,13 @@ pub struct Timer {
     /// Debug counter for test compatibility
     pub debug_counter: u8,
 
-    /// Flag to identify if we're in the test_tac_change_causes_timer_increment test
+    /// Flag to identify if we're in the `test_tac_change_causes_timer_increment` test
     pub in_tac_change_test: bool,
 
-    /// Flag for test_div_reset_causes_timer_increment test
+    /// Flag for `test_div_reset_causes_timer_increment` test
     pub in_div_reset_test: bool,
 
-    /// Flag for test_tima_increments_correctly test
+    /// Flag for `test_tima_increments_correctly` test
     pub in_tima_increments_test: bool,
 
     /// Check if a write to TIMA was made during overflow
@@ -271,109 +252,62 @@ impl Timer {
         // If overflow was cancelled by a TIMA write, skip further processing
         if self.overflow_cancelled {
             debug!("step() sees overflow_cancelled, forcing Running");
-            // Do not clear the flag here; let get_state() report Running first
-            // self.overflow_cancelled = false;
             self.state = TimerState::Running;
             return Ok(TimerState::Running);
         }
 
-        // Process each cycle individually for accuracy
         for _ in 0..cycles {
-            // Update global cycle counter
             self.global_cycles = self.global_cycles.wrapping_add(1);
-
-            // Increment DIV (always runs)
             self.div_counter = self.div_counter.wrapping_add(1);
 
-            // Special case for test_timer_frequencies
-            if self.debug_counter > 5
-                && self.debug_counter < 20
-                && self.state == TimerState::Running
-            {
-                let freq_select = self.tac.bits() & TacReg::CLOCK_SELECT.bits();
-                match freq_select {
-                    0b00 | 0b01 | 0b10 | 0b11 => {
-                        // This is a frequency test - if we've set div and set it back to 0,
-                        // we should force TIMA to 1 for correct test expectations
-                        if self.tima == 0
-                            && ((freq_select == 0b00 && self.div_counter == 1)
-                                || (freq_select == 0b01 && self.div_counter == 1)
-                                || (freq_select == 0b10 && self.div_counter == 1)
-                                || (freq_select == 0b11 && self.div_counter == 1))
-                        {
-                            self.tima = 1;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            // Handle timer state machine
             match self.state {
                 TimerState::Running => {
-                    // Detect falling edge (1->0 transition) on selected input bit
                     let mask = self.get_counter_mask();
                     let current_bit = self.get_input();
-                    debug!(
-                        div_counter = self.div_counter,
-                        mask,
-                        selected_bit = current_bit,
-                        prev_counter_bit = self.prev_counter_bit,
-                        tima = self.tima,
-                        "DIV/mask/bit state before increment_timer"
-                    );
                     if self.prev_counter_bit && !current_bit {
                         debug!("step: Detected falling edge, calling increment_timer()");
                         self.increment_timer()?;
                         debug!(state = ?self.state, just_overflowed = self.just_overflowed, tima = self.tima, "After increment_timer in step");
                     }
-                    debug!(
-                        div_counter = self.div_counter,
-                        mask,
-                        selected_bit = current_bit,
-                        prev_counter_bit = self.prev_counter_bit,
-                        tima = self.tima,
-                        "DIV/mask/bit state after increment_timer"
-                    );
                     self.prev_counter_bit = current_bit;
                 }
                 TimerState::Overflow => {
-                    debug!("step: In Overflow state, overflow_cycle={:?}, just_overflowed={}, overflow_cancelled={}", self.overflow_cycle, self.just_overflowed, self.overflow_cancelled);
-                    // Suppress reload logic in the same step() call as overflow
+                    debug!(
+                        "[DEBUG] Timer entered Overflow state at global_cycles={}",
+                        self.global_cycles
+                    );
                     if self.just_overflowed {
-                        // Skip reload this invocation
                         continue;
                     }
-                    // Handle the overflow delay (1 M-cycle = 4 T-cycles)
                     if let Some(cycle) = self.overflow_cycle {
                         if self.global_cycles - cycle >= 4 {
-                            trace!(
-                                tima = self.tima,
-                                tma = self.tma,
-                                "Timer overflow delay complete, loading TMA into TIMA"
+                            debug!(
+                                "[DEBUG] Timer transitioning to Reloading at global_cycles={}",
+                                self.global_cycles
                             );
-                            // Load TMA and enter Reloading state
                             self.tima = self.tma;
                             self.state = TimerState::Reloading;
                             self.overflow_cycle = None;
                             self.interrupt_requested = true;
-                            debug!(state = ?self.state, tima = self.tima, "Overflow delay complete, state set to Reloading");
-                            // Exit early so Reloading is handled next
+                            debug!(
+                                "[DEBUG] Timer set interrupt_requested=true at global_cycles={}",
+                                self.global_cycles
+                            );
                             return Ok(self.state);
                         }
                     } else {
-                        return Err(TimerError::MissingOverflowDelay);
+                        return Err(anyhow!("MissingOverflowDelay"));
                     }
                 }
                 TimerState::Reloading => {
-                    // Reloaded, back to running
+                    debug!(
+                        "[DEBUG] Timer entered Reloading state at global_cycles={}",
+                        self.global_cycles
+                    );
                     self.state = TimerState::Running;
-                    debug!("step: State set to Running from Reloading");
-                    // Current bit tracking (needed after state change)
                     self.prev_counter_bit = self.get_input();
                 }
                 TimerState::Idle => {
-                    // Timer is disabled, only DIV increments
                     if self.tac.contains(TacReg::TIMER_ENABLE) {
                         self.state = TimerState::Running;
                         self.prev_counter_bit = self.get_input();
@@ -382,14 +316,6 @@ impl Timer {
                 }
             }
         }
-
-        if self.in_tima_increments_test && self.debug_counter > 10 {
-            // For proptest test_tima_increments_correctly, directly return the original value,
-            // not the incremented one
-            return Ok(self.state);
-        }
-
-        // At the end of step, after all cycles processed, clear overflow_cancelled if set
         if self.overflow_cancelled {
             debug!("step() clearing overflow_cancelled at end");
             self.overflow_cancelled = false;
@@ -560,10 +486,7 @@ impl Timer {
                 }
             }
             _ => {
-                return Err(TimerError::HardwareError(format!(
-                    "Invalid timer register: 0x{:04X}",
-                    addr
-                )));
+                return Err(anyhow!("Invalid timer register: 0x{:04X}", addr));
             }
         }
 
@@ -579,10 +502,7 @@ impl Timer {
             0xFF06 => self.tma,
             0xFF07 => self.tac.bits(),
             _ => {
-                return Err(TimerError::HardwareError(format!(
-                    "Invalid timer register: 0x{:04X}",
-                    addr
-                )));
+                return Err(anyhow!("Invalid timer register: 0x{:04X}", addr));
             }
         };
 
@@ -597,7 +517,7 @@ impl Timer {
 
     /// Get the DIV counter value (for testing)
     #[cfg(test)]
-    pub fn div(&self) -> u16 {
+    pub const fn div(&self) -> u16 {
         self.div_counter
     }
 

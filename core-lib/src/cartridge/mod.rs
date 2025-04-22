@@ -1,5 +1,5 @@
 /// core-lib/src/cartridge/mod.rs
-use crate::mmu::mbc::{Mbc, Mbc1, NoMbc};
+use crate::mmu::mbc::{Mbc, Mbc1, Mbc2, Mbc3, Mbc5, NoMbc};
 use thiserror::Error;
 
 /// Errors that can occur when working with cartridges
@@ -21,20 +21,44 @@ pub enum CartridgeType {
     Mbc1,
     Mbc1Ram,
     Mbc1RamBattery,
-    // TODO: Add other MBC types as we implement them
+    Mbc2,
+    Mbc2Battery,
+    Mbc3,
+    Mbc3Ram,
+    Mbc3RamBattery,
+    Mbc3TimerBattery,
+    Mbc3TimerRamBattery,
+    Mbc5,
+    Mbc5Ram,
+    Mbc5RamBattery,
+    Mbc5Rumble,
+    Mbc5RumbleRam,
+    Mbc5RumbleRamBattery,
+    // ... add more as needed ...
 }
 
 impl TryFrom<u8> for CartridgeType {
     type Error = CartridgeError;
-
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0x00 => Ok(Self::RomOnly),
             0x01 => Ok(Self::Mbc1),
             0x02 => Ok(Self::Mbc1Ram),
             0x03 => Ok(Self::Mbc1RamBattery),
-            0x05..=0xFF => Err(CartridgeError::UnsupportedCartridgeType(value)),
-            _ => Err(CartridgeError::InvalidCartridgeType(value)),
+            0x05 => Ok(Self::Mbc2),
+            0x06 => Ok(Self::Mbc2Battery),
+            0x0F => Ok(Self::Mbc3TimerBattery),
+            0x10 => Ok(Self::Mbc3TimerRamBattery),
+            0x11 => Ok(Self::Mbc3),
+            0x12 => Ok(Self::Mbc3Ram),
+            0x13 => Ok(Self::Mbc3RamBattery),
+            0x19 => Ok(Self::Mbc5),
+            0x1A => Ok(Self::Mbc5Ram),
+            0x1B => Ok(Self::Mbc5RamBattery),
+            0x1C => Ok(Self::Mbc5Rumble),
+            0x1D => Ok(Self::Mbc5RumbleRam),
+            0x1E => Ok(Self::Mbc5RumbleRamBattery),
+            _ => Err(CartridgeError::UnsupportedCartridgeType(value)),
         }
     }
 }
@@ -103,21 +127,29 @@ impl Cartridge {
     }
 
     /// Create an appropriate MBC instance based on the cartridge type
-
-    pub fn create_mbc(self) -> Box<dyn Mbc> {
-        match self.cart_type {
-            0x00 => Box::new(NoMbc::new(self.data)),
-            0x01 => Box::new(Mbc1::new(self.data)),
-            0x02 => Box::new(Mbc1::new(self.data)),
-            0x03 => Box::new(Mbc1::new(self.data)),
-            0x05 => Box::new(Mbc1::new(self.data)),
-            0x06 => Box::new(Mbc1::new(self.data)),
-            _ => panic!("Unsupported cartridge type: {:#04X}", self.cart_type),
+    pub fn create_mbc(self) -> Result<Box<dyn Mbc>, CartridgeError> {
+        let cart_type = CartridgeType::try_from(self.cart_type)?;
+        match cart_type {
+            CartridgeType::RomOnly => Ok(Box::new(NoMbc::new(self.data))),
+            CartridgeType::Mbc1 | CartridgeType::Mbc1Ram | CartridgeType::Mbc1RamBattery => {
+                Ok(Box::new(Mbc1::new(self.data)))
+            }
+            CartridgeType::Mbc2 | CartridgeType::Mbc2Battery => Ok(Box::new(Mbc2::new(self.data))),
+            CartridgeType::Mbc3
+            | CartridgeType::Mbc3Ram
+            | CartridgeType::Mbc3RamBattery
+            | CartridgeType::Mbc3TimerBattery
+            | CartridgeType::Mbc3TimerRamBattery => Ok(Box::new(Mbc3::new(self.data))),
+            CartridgeType::Mbc5
+            | CartridgeType::Mbc5Ram
+            | CartridgeType::Mbc5RamBattery
+            | CartridgeType::Mbc5Rumble
+            | CartridgeType::Mbc5RumbleRam
+            | CartridgeType::Mbc5RumbleRamBattery => Ok(Box::new(Mbc5::new(self.data))),
         }
     }
 
     /// Get the cartridge title from the ROM header
-
     pub fn title(&self) -> String {
         let title_bytes = &self.data[0x134..=0x143];
         let end = title_bytes.iter().position(|&b| b == 0).unwrap_or(16);
@@ -125,25 +157,21 @@ impl Cartridge {
     }
 
     /// Get the cartridge type
-
     pub fn cartridge_type(&self) -> CartridgeType {
         CartridgeType::try_from(self.cart_type).unwrap()
     }
 
     /// Get the ROM size in bytes
-
     pub const fn rom_size(&self) -> usize {
         self.rom_size
     }
 
     /// Get the RAM size in bytes
-
     pub const fn ram_size(&self) -> usize {
         self.ram_size
     }
 
     /// Check if the cartridge has battery-backed RAM
-
     pub const fn has_battery(&self) -> bool {
         self.has_battery
     }

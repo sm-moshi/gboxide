@@ -44,7 +44,7 @@ impl MemoryBus for Bus<'_> {
     }
 
     fn write(&mut self, addr: u16, value: u8) {
-        self.mmu.write(addr, value);
+        let _ = self.mmu.write(addr, value);
     }
 
     fn get_interrupt(&self) -> Option<InterruptFlag> {

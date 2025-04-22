@@ -8,6 +8,14 @@ core-lib = { path = "../core-lib" }
 common   = { path = "../common" }
 
 tokio              = { workspace = true }
-clap               = { version = "4.5.37", features = ["derive"] }
-tracing            = "0.1.41"
-tracing-subscriber = "0.3.19"
+clap               = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+winit              = { workspace = true }
+anyhow             = { workspace = true }
+criterion          = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+assert_cmd        = "2.0.17"
+predicates        = "3.1.3"

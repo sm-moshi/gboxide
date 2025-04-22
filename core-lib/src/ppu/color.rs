@@ -64,19 +64,19 @@ impl Color {
     /// - Bits 2-3: Color for index 1
     /// - Bits 4-5: Color for index 2
     /// - Bits 6-7: Color for index 3
-    pub fn from_palette(color_idx: u8, palette: u8) -> Self {
+    pub const fn from_palette(color_idx: u8, palette: u8) -> Self {
         let shift = (color_idx & 0x3) << 1;
         let palette_idx = (palette >> shift) & 0x3;
         Self::DMG_COLORS[palette_idx as usize]
     }
 
     /// Convert the Color to a 32-bit RGBA value
-    pub fn to_rgba32(&self) -> u32 {
+    pub const fn to_rgba32(&self) -> u32 {
         ((self.a as u32) << 24) | ((self.r as u32) << 16) | ((self.g as u32) << 8) | (self.b as u32)
     }
 
     /// Create a Color from a 32-bit RGBA value
-    pub fn from_rgba32(rgba: u32) -> Self {
+    pub const fn from_rgba32(rgba: u32) -> Self {
         Self {
             r: ((rgba >> 16) & 0xFF) as u8,
             g: ((rgba >> 8) & 0xFF) as u8,

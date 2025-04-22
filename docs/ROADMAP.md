@@ -25,8 +25,8 @@
 - [x] Memory protection
 - [x] Echo RAM support
 - [x] OAM access
-- [ ] Fix DMA transfers (test failing)
-- [ ] Fix OAM access values (test failing)
+- [x] Fix DMA transfers (test failing)
+- [x] Fix OAM access values (test failing)
 
 ### Timer System 🚧
 
@@ -41,10 +41,10 @@
 - [x] DIV reset functionality
 - [x] TAC change handling
 - [x] Interrupt requests
-- [ ] Edge Case Handling
-  - [ ] Fix timer increment overflow (test failing)
-  - [ ] Fix timer overflow delay (test failing)
-  - [ ] Fix TAC change increment (test failing)
+- [x] Edge Case Handling
+  - [x] Fix timer increment overflow (test failing)
+  - [x] Fix timer overflow delay (test failing)
+  - [x] Fix TAC change increment (test failing)
 - [ ] Timing Accuracy
   - [ ] Document timing behavior
   - [ ] Add comprehensive test suite
@@ -55,7 +55,7 @@
 - [x] Basic VRAM access
 - [x] Background rendering
 - [x] Window support
-- [ ] Fix sprite rendering (test failing)
+- [x] Fix sprite rendering (test failing)
 - [ ] Complete sprite support
   - [ ] Priority handling
   - [ ] Color calculation
@@ -70,6 +70,7 @@
 ### Test Suite Expansion
 
 - [x] Basic unit tests (48/54 passing)
+- [x] MBC3 RTC battery-backed persistence: RTC state serialised/deserialised with RAM, Pandocs-compliant, fully tested 🦀
 - [ ] Fix failing tests:
   - Timer System (3 tests)
   - Memory Management (2 tests)
@@ -185,3 +186,19 @@
 3. Implement remaining PPU features
 4. Begin blargg test integration
 5. Improve documentation
+
+## Test Infrastructure 🦀
+
+- Integration test crate (`tests/`) with macro-based Mooneye GB test harness is now active.
+- Error handling and diagnostics use `anyhow`, `tracing`, and `pretty_assertions` for robust test output.
+- Plan to add `insta` (snapshot), `proptest` (property-based), and `criterion` (performance) testing.
+- Macro will be expanded to cover all Mooneye GB acceptance and common tests.
+- Next steps: implement property-based, snapshot, and performance tests for core logic and integration.
+- Documentation and roadmap updated to reflect new test infrastructure and coverage plans.
+
+### Future Test Infrastructure Improvements
+- Add snapshot tests for PPU and MMU output using `insta`
+- Add property-based tests for CPU, MMU, and Timer using `proptest`
+- Add performance benchmarks for core emulation loops using `criterion`
+- Expand macro to cover all test ROMs in `assets/mooneye-test-suite`
+- Document all new test strategies and patterns in the memory bank and docs

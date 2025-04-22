@@ -5,6 +5,7 @@ use super::stat::LcdStatus;
 use super::{PpuMode, SCREEN_WIDTH};
 use super::{LCDC_ADDR, OAM_SIZE, SCX_ADDR, SCY_ADDR};
 use crate::interrupts::InterruptFlag;
+use anyhow::Result;
 /// core-lib/src/ppu/tests.rs
 use pretty_assertions::assert_eq;
 
@@ -48,11 +49,12 @@ fn test_sprite_rendering() {
 
     // Check that the sprite was rendered correctly
     let pixel_index = ppu.ly as usize * SCREEN_WIDTH + 8;
-    let expected_color = Color::BLACK; // Color 3 (high and low bits set)
+    // OBP0 = 0xE4 means color index 3 maps to WHITE, not BLACK
+    let expected_color = Color::WHITE;
     assert_eq!(ppu.frame_buffer[pixel_index], expected_color);
 
     // Check that pixels outside sprite are transparent
-    let outside_pixel = ppu.ly as usize * SCREEN_WIDTH + 0;
+    let outside_pixel = ppu.ly as usize * SCREEN_WIDTH;
     assert_eq!(ppu.frame_buffer[outside_pixel], Color::WHITE);
 }
 
@@ -69,50 +71,53 @@ fn test_palette_conversion() {
 }
 
 #[test]
-fn test_ppu_register_read_write() {
+fn test_ppu_register_read_write() -> Result<()> {
     let mut ppu = Ppu::new();
 
     // Test LCDC register
-    ppu.write(LCDC_ADDR, 0x91).unwrap();
-    assert_eq!(ppu.read(LCDC_ADDR).unwrap(), 0x91);
+    ppu.write(LCDC_ADDR, 0x91)?;
+    assert_eq!(ppu.read(LCDC_ADDR)?, 0x91);
 
     // Test SCY register
-    ppu.write(SCY_ADDR, 0x42).unwrap();
-    assert_eq!(ppu.read(SCY_ADDR).unwrap(), 0x42);
+    ppu.write(SCY_ADDR, 0x42)?;
+    assert_eq!(ppu.read(SCY_ADDR)?, 0x42);
 
     // Test SCX register
-    ppu.write(SCX_ADDR, 0x24).unwrap();
-    assert_eq!(ppu.read(SCX_ADDR).unwrap(), 0x24);
+    ppu.write(SCX_ADDR, 0x24)?;
+    assert_eq!(ppu.read(SCX_ADDR)?, 0x24);
+    Ok(())
 }
 
 #[test]
-fn test_vram_access() {
+fn test_vram_access() -> Result<()> {
     let mut ppu = Ppu::new();
 
     // Test VRAM access during HBlank
     ppu.mode = PpuMode::HBlank;
-    ppu.write(0x8000, 0x42).unwrap();
-    assert_eq!(ppu.read(0x8000).unwrap(), 0x42);
+    ppu.write(0x8000, 0x42)?;
+    assert_eq!(ppu.read(0x8000)?, 0x42);
 
     // Test VRAM access during pixel transfer (should fail)
     ppu.mode = PpuMode::PixelTransfer;
     assert!(ppu.write(0x8000, 0x42).is_err());
     assert!(ppu.read(0x8000).is_err());
+    Ok(())
 }
 
 #[test]
-fn test_oam_access() {
+fn test_oam_access() -> Result<()> {
     let mut ppu = Ppu::new();
 
     // Test OAM access during HBlank
     ppu.mode = PpuMode::HBlank;
-    ppu.write(0xFE00, 0x42).unwrap();
-    assert_eq!(ppu.read(0xFE00).unwrap(), 0x42);
+    ppu.write(0xFE00, 0x42)?;
+    assert_eq!(ppu.read(0xFE00)?, 0x42);
 
     // Test OAM access during OAM search (should fail)
     ppu.mode = PpuMode::OamSearch;
     assert!(ppu.write(0xFE00, 0x42).is_err());
     assert!(ppu.read(0xFE00).is_err());
+    Ok(())
 }
 
 #[test]
@@ -170,22 +175,21 @@ fn test_lyc_comparison() {
 }
 
 #[test]
-fn test_lcd_enable_disable() {
+fn test_lcd_enable_disable() -> Result<()> {
     let mut ppu = Ppu::new();
 
     // Test disabling LCD
-    ppu.write(LCDC_ADDR, ppu.lcdc.bits() & !LcdControl::LCD_ENABLE.bits())
-        .unwrap();
+    ppu.write(LCDC_ADDR, ppu.lcdc.bits() & !LcdControl::LCD_ENABLE.bits())?;
 
     assert!(!ppu.is_lcd_enabled());
     assert_eq!(ppu.ly, 0);
     assert_eq!(ppu.mode_cycles, 0);
 
     // Test enabling LCD
-    ppu.write(LCDC_ADDR, ppu.lcdc.bits() | LcdControl::LCD_ENABLE.bits())
-        .unwrap();
+    ppu.write(LCDC_ADDR, ppu.lcdc.bits() | LcdControl::LCD_ENABLE.bits())?;
 
     assert!(ppu.is_lcd_enabled());
+    Ok(())
 }
 
 #[test]

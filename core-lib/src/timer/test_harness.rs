@@ -1,15 +1,22 @@
 /// core-lib/src/timer/test_harness.rs
 /// Test harness for timer testing
-use super::{Timer, TimerError, TimerState};
+use super::{Timer, TimerState};
+use anyhow::{anyhow, Result};
 use tracing::{debug, instrument};
 
-/// TimerTestHarness provides a way to easily test timer behavior
+/// `TimerTestHarness` provides a way to easily test timer behavior
 pub struct TimerTestHarness {
     /// The timer under test
     pub timer: Timer,
 
     /// Log of timer states during testing
     pub cycle_log: Vec<(u64, TimerState, u8, bool)>, // (cycle, state, tima, interrupt)
+}
+
+impl Default for TimerTestHarness {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TimerTestHarness {
@@ -22,56 +29,56 @@ impl TimerTestHarness {
     }
 
     /// Create a test harness with specific timer configuration
-    pub fn setup(tima: u8, tma: u8, tac: u8, div: u16) -> Self {
+    pub fn setup(tima: u8, tma: u8, tac: u8, div: u16) -> Result<Self> {
         let mut harness = Self::new();
         harness.timer.tima = tima;
         harness.timer.tma = tma;
-        harness.timer.write(0xFF07, tac).unwrap();
+        harness.timer.write(0xFF07, tac)?;
         harness.timer.set_div(div);
-        harness
+        Ok(harness)
     }
 
     /// Write to the TAC register
-    pub fn write_tac(&mut self, value: u8) {
-        self.timer.write(0xFF07, value).unwrap();
+    pub fn write_tac(&mut self, value: u8) -> Result<()> {
+        self.timer.write(0xFF07, value)?;
+        Ok(())
     }
 
     /// Write to the TIMA register
-    pub fn write_tima(&mut self, value: u8) {
-        self.timer.write(0xFF05, value).unwrap();
+    pub fn write_tima(&mut self, value: u8) -> Result<()> {
+        self.timer.write(0xFF05, value)?;
+        Ok(())
     }
 
     /// Write to the TMA register
-    pub fn write_tma(&mut self, value: u8) {
-        self.timer.write(0xFF06, value).unwrap();
+    pub fn write_tma(&mut self, value: u8) -> Result<()> {
+        self.timer.write(0xFF06, value)?;
+        Ok(())
     }
 
     /// Read the TIMA register
-    pub fn read_tima(&self) -> u8 {
-        self.timer.read(0xFF05).unwrap()
+    pub fn read_tima(&self) -> Result<u8> {
+        self.timer.read(0xFF05)
     }
 
     /// Step until TIMA changes value
-    pub fn step_until_tima_change(&mut self) -> Result<TimerState, TimerError> {
-        let start_tima = self.read_tima();
+    pub fn step_until_tima_change(&mut self) -> Result<TimerState> {
+        let start_tima = self.read_tima()?;
         let mut cycles = 0;
 
-        while self.read_tima() == start_tima && cycles < 10000 {
-            let state = self.step_cycles(1)?;
+        while self.read_tima()? == start_tima && cycles < 10000 {
+            let _state = self.step_cycles(1)?;
             cycles += 1;
             if cycles >= 10000 {
-                return Err(TimerError::HardwareError(
-                    "Timeout waiting for TIMA change".to_string(),
-                ));
+                return Err(anyhow!("Timeout waiting for TIMA change"));
             }
         }
-
         Ok(self.timer.get_state())
     }
 
     /// Step the timer for a specific number of cycles and log the state
     #[instrument(skip(self), level = "debug")]
-    pub fn step_cycles(&mut self, cycles: u32) -> Result<TimerState, TimerError> {
+    pub fn step_cycles(&mut self, cycles: u32) -> Result<TimerState> {
         let result = self.timer.step(cycles)?;
 
         // Log state
@@ -94,11 +101,7 @@ impl TimerTestHarness {
 
     /// Run the timer until a specific state is reached or timeout
     #[instrument(skip(self), level = "debug")]
-    pub fn run_until_state(
-        &mut self,
-        target_state: TimerState,
-        max_cycles: u32,
-    ) -> Result<u32, TimerError> {
+    pub fn run_until_state(&mut self, target_state: TimerState, max_cycles: u32) -> Result<u32> {
         debug!(
             target_state = ?target_state,
             max_cycles = max_cycles,
@@ -116,10 +119,11 @@ impl TimerTestHarness {
             }
         }
 
-        Err(TimerError::HardwareError(format!(
+        Err(anyhow!(
             "Timeout waiting for state {:?} after {} cycles",
-            target_state, max_cycles
-        )))
+            target_state,
+            max_cycles
+        ))
     }
 
     /// Assert that the timer went through a specific sequence of states
@@ -139,8 +143,7 @@ impl TimerTestHarness {
         for (i, (expected_item, actual_item)) in expected.iter().zip(actual.iter()).enumerate() {
             assert_eq!(
                 expected_item, actual_item,
-                "State sequence mismatch at position {}: expected {:?}, got {:?}",
-                i, expected_item, actual_item
+                "State sequence mismatch at position {i}: expected {expected_item:?}, got {actual_item:?}"
             );
         }
     }
