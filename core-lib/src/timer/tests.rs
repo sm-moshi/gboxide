@@ -1,8 +1,6 @@
-/// core-lib/src/timer/tests.rs
 use super::{Timer, TimerState};
 use crate::timer::test_harness::TimerTestHarness;
 use anyhow::Result;
-use insta::assert_debug_snapshot;
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 use test_case::test_case;
@@ -39,6 +37,7 @@ fn test_timer_frequency_dividers(freq_bits: u8, expected_divider: u16) -> Result
     Ok(())
 }
 
+#[allow(clippy::used_underscore_binding)]
 #[test]
 fn test_timer_overflow_delay() -> Result<()> {
     let mut timer = Timer::new();
@@ -53,13 +52,13 @@ fn test_timer_overflow_delay() -> Result<()> {
     timer.write(0xFF06, 0xAB)?;
 
     // Step for one increment
-    let state = timer.step(1)?;
+    let _state = timer.step(1)?;
 
     // DIV bit is set but no falling edge yet
-    assert_eq!(state, TimerState::Running);
+    assert_eq!(_state, TimerState::Running);
 
     // Need to cause a falling edge to overflow TIMA
-    let state = timer.step(1024)?; // One full cycle of DIV bit
+    let _state = timer.step(1024)?; // One full cycle of DIV bit
 
     // The state might be Overflow or Running depending on the implementation
     // Check the state using get_state() which handles test cases
@@ -152,6 +151,7 @@ fn test_tac_change_causes_timer_increment() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::used_underscore_binding)]
 #[test]
 fn test_cancel_overflow_by_writing_tima() -> Result<()> {
     crate::timer::tracing_init::init();
@@ -287,17 +287,17 @@ proptest! {
     }
 }
 
-#[cfg(test)]
+#[allow(clippy::used_underscore_binding)]
+#[allow(clippy::module_inception)]
 mod tests {
     use anyhow::Result;
     // Use explicit imports to avoid ambiguity
     use crate::timer::test_harness::TimerTestHarness;
-    use crate::timer::{Timer, TimerState};
+    use crate::timer::Timer;
     // Use explicit imports for test macros to avoid ambiguity
     use test_case::test_case;
     // Import assert_eq from pretty_assertions
-    use pretty_assertions::assert_eq as pretty_assert_eq;
-    use std::assert_eq;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_timer_disabled() -> Result<()> {
@@ -331,7 +331,7 @@ mod tests {
     #[test_case(0b001, 262_144)]
     #[test_case(0b010, 65536)]
     #[test_case(0b011, 16384)]
-    fn test_timer_frequencies(tac_value: u8, cycles_per_increment: u32) -> Result<()> {
+    fn test_timer_frequencies(tac_value: u8, _cycles_per_increment: u32) -> Result<()> {
         let mut timer = Timer::new();
 
         // Set TAC with timer enabled and specified frequency

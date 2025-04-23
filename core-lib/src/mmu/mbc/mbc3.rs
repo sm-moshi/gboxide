@@ -66,7 +66,7 @@ impl Rtc {
         self.clone()
     }
     /// Read a register (0x08–0x0C)
-    fn read_reg(&self, reg: u8) -> u8 {
+    const fn read_reg(&self, reg: u8) -> u8 {
         match reg {
             0x08 => self.seconds,
             0x09 => self.minutes,
@@ -92,9 +92,9 @@ impl Rtc {
             0x08 => self.seconds = value % 60,
             0x09 => self.minutes = value % 60,
             0x0A => self.hours = value % 24,
-            0x0B => self.days = (self.days & 0x100) | value as u16,
+            0x0B => self.days = (self.days & 0x100) | u16::from(value),
             0x0C => {
-                self.days = (self.days & 0xFF) | ((value as u16 & 0x01) << 8);
+                self.days = (self.days & 0xFF) | ((u16::from(value) & 0x01) << 8);
                 self.halt = value & 0x40 != 0;
                 self.carry = value & 0x80 != 0;
             }
@@ -109,8 +109,8 @@ impl Rtc {
         buf[2] = self.hours;
         buf[3] = (self.days & 0xFF) as u8;
         buf[4] = ((self.days >> 8) & 0x01) as u8;
-        buf[5] = self.halt as u8;
-        buf[6] = self.carry as u8;
+        buf[5] = u8::from(self.halt);
+        buf[6] = u8::from(self.carry);
         let ts = self
             .last_update
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -121,15 +121,15 @@ impl Rtc {
     }
     /// Deserialise RTC state from bytes
     fn from_bytes(buf: &[u8]) -> Self {
-        let seconds = buf.get(0).copied().unwrap_or(0);
+        let seconds = buf.first().copied().unwrap_or(0);
         let minutes = buf.get(1).copied().unwrap_or(0);
         let hours = buf.get(2).copied().unwrap_or(0);
-        let days_lo = buf.get(3).copied().unwrap_or(0) as u16;
-        let days_hi = buf.get(4).copied().unwrap_or(0) as u16;
+        let days_lo = u16::from(buf.get(3).copied().unwrap_or(0));
+        let days_hi = u16::from(buf.get(4).copied().unwrap_or(0));
         let halt = buf.get(5).copied().unwrap_or(0) != 0;
         let carry = buf.get(6).copied().unwrap_or(0) != 0;
         let mut ts_bytes = [0u8; 8];
-        ts_bytes.copy_from_slice(&buf.get(8..16).unwrap_or(&[0; 8]));
+        ts_bytes.copy_from_slice(buf.get(8..16).unwrap_or(&[0; 8]));
         let ts = u64::from_le_bytes(ts_bytes);
         let last_update = SystemTime::UNIX_EPOCH + Duration::from_secs(ts);
         Self {
@@ -166,11 +166,11 @@ pub struct Mbc3 {
 impl Mbc3 {
     pub fn new(rom: Vec<u8>) -> Self {
         // RAM size: up to 32KB (4 banks)
-        let ram = vec![0; 0x8000];
+        let ram_buf = vec![0; 0x8000];
         let rtc = Rtc::new();
         Self {
             rom,
-            ram,
+            ram: ram_buf,
             ram_enabled: false,
             rom_bank: 1,
             ram_bank: 0,
@@ -179,7 +179,7 @@ impl Mbc3 {
             latch_state: 0,
         }
     }
-    fn rtc_index(sel: u8) -> Option<u8> {
+    const fn rtc_index(sel: u8) -> Option<u8> {
         match sel {
             0x08..=0x0C => Some(sel),
             _ => None,
@@ -206,25 +206,25 @@ impl Mbc for Mbc3 {
                 if !self.ram_enabled {
                     return Err(MbcError::RamDisabled);
                 }
-                if let Some(reg) = Self::rtc_index(self.ram_bank) {
-                    Ok(self.rtc_latch.read_reg(reg))
-                } else if self.ram_bank < 4 {
-                    let idx = (self.ram_bank as usize) * 0x2000 + (addr as usize - 0xA000);
-                    Ok(*self.ram.get(idx).unwrap_or(&0xFF))
-                } else {
-                    Err(MbcError::InvalidRamBank(self.ram_bank as usize))
-                }
+                Self::rtc_index(self.ram_bank).map_or_else(
+                    || {
+                        if self.ram_bank < 4 {
+                            let idx = (self.ram_bank as usize) * 0x2000 + (addr as usize - 0xA000);
+                            Ok(*self.ram.get(idx).unwrap_or(&0xFF))
+                        } else {
+                            Err(MbcError::InvalidRamBank(self.ram_bank as usize))
+                        }
+                    },
+                    |reg| Ok(self.rtc_latch.read_reg(reg)),
+                )
             }
             _ => Err(MbcError::ProtectionViolation(addr)),
         }
     }
     fn write(&mut self, addr: u16, value: u8) -> Result<(), MbcError> {
         // Only tick RTC on non-RTC register writes
-        let is_rtc_reg = if let Some(reg) = Self::rtc_index(self.ram_bank) {
-            (addr >= 0xA000 && addr <= 0xBFFF) && (reg >= 0x08 && reg <= 0x0C)
-        } else {
-            false
-        };
+        let is_rtc_reg = Self::rtc_index(self.ram_bank)
+            .is_some_and(|reg| (0xA000..=0xBFFF).contains(&addr) && (0x08..=0x0C).contains(&reg));
         if !is_rtc_reg {
             self.rtc.tick();
         }

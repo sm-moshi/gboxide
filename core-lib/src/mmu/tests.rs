@@ -1,4 +1,3 @@
-/// core-lib/src/mmu/tests.rs
 #[cfg(test)]
 // Acceptable in tests - we want tests to fail loudly
 // #[allow(clippy::cast_possible_truncation)] // Intentional truncation in test data

@@ -1,4 +1,3 @@
-/// core-lib/src/cartridge/mod.rs
 use crate::mmu::mbc::{Mbc, Mbc1, Mbc2, Mbc3, Mbc5, NoMbc};
 use thiserror::Error;
 
@@ -77,6 +76,10 @@ pub struct Cartridge {
 }
 
 impl Cartridge {
+    /// Creates a new Cartridge from the given ROM data.
+    ///
+    /// # Errors
+    /// Returns `CartridgeError::InvalidSize` if the ROM is too small.
     pub fn new(rom: Vec<u8>) -> Result<Self, CartridgeError> {
         if rom.len() < 0x150 {
             return Err(CartridgeError::InvalidSize(rom.len()));
@@ -101,7 +104,6 @@ impl Cartridge {
 
     const fn get_rom_size(value: u8) -> usize {
         match value {
-            0x00 => 32 * 1024,   // 32KB (2 banks)
             0x01 => 64 * 1024,   // 64KB (4 banks)
             0x02 => 128 * 1024,  // 128KB (8 banks)
             0x03 => 256 * 1024,  // 256KB (16 banks)
@@ -116,7 +118,6 @@ impl Cartridge {
 
     const fn get_ram_size(value: u8) -> usize {
         match value {
-            0x00 => 0,          // No RAM
             0x01 => 2 * 1024,   // 2KB
             0x02 => 8 * 1024,   // 8KB
             0x03 => 32 * 1024,  // 32KB (4 banks of 8KB each)
@@ -127,6 +128,9 @@ impl Cartridge {
     }
 
     /// Create an appropriate MBC instance based on the cartridge type
+    ///
+    /// # Errors
+    /// Returns `CartridgeError::UnsupportedCartridgeType` if the type is not supported.
     pub fn create_mbc(self) -> Result<Box<dyn Mbc>, CartridgeError> {
         let cart_type = CartridgeType::try_from(self.cart_type)?;
         match cart_type {
@@ -157,8 +161,11 @@ impl Cartridge {
     }
 
     /// Get the cartridge type
-    pub fn cartridge_type(&self) -> CartridgeType {
-        CartridgeType::try_from(self.cart_type).unwrap()
+    ///
+    /// # Errors
+    /// Returns `CartridgeError::InvalidCartridgeType` or `CartridgeError::UnsupportedCartridgeType` if the type is not valid or supported.
+    pub fn cartridge_type(&self) -> Result<CartridgeType, CartridgeError> {
+        CartridgeType::try_from(self.cart_type)
     }
 
     /// Get the ROM size in bytes
@@ -176,6 +183,10 @@ impl Cartridge {
         self.has_battery
     }
 
+    /// Reads a byte from the cartridge at the given address.
+    ///
+    /// # Panics
+    /// Panics if the address is not a valid cartridge address.
     pub fn read(&self, addr: u16) -> u8 {
         match addr {
             // ROM Bank 0
@@ -203,6 +214,10 @@ impl Cartridge {
         }
     }
 
+    /// Writes a byte to the cartridge at the given address.
+    ///
+    /// # Panics
+    /// Panics if the address is not a valid cartridge address.
     pub fn write(&mut self, addr: u16, value: u8) {
         match addr {
             // RAM Enable

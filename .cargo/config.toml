@@ -1,6 +1,9 @@
+[env]
+LLVM_PROFILE_FILE = "target/coverage/default_%p-%m.profraw"
+
 [build]
 target-dir = "target"
-rustflags  = ["-C", "target-cpu=native"]
+rustflags  = ["-C", "instrument-coverage"]
 
 [target.wasm32-unknown-unknown]
 runner = "wasm-bindgen"

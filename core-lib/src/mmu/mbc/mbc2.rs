@@ -14,7 +14,7 @@ pub struct Mbc2 {
 }
 
 impl Mbc2 {
-    pub fn new(rom: Vec<u8>) -> Self {
+    pub const fn new(rom: Vec<u8>) -> Self {
         Self {
             rom,
             ram: [0x0F; 512], // Uninitialized RAM is 0x0F (all bits set)

@@ -7,29 +7,8 @@
 use super::CPU;
 use crate::mmu::MemoryBusTrait;
 
-/// Register indices for named 8-bit registers.
-pub(crate) const REG_INDICES: [(char, usize); 7] = [
-    ('b', 0),
-    ('c', 1),
-    ('d', 2),
-    ('e', 3),
-    ('h', 4),
-    ('l', 5),
-    ('a', 7),
-];
-
-/// Converts a register name (as a string) to its index in the register array.
-///
-/// # Panics
-/// Panics if the register name is invalid.
-pub(crate) fn reg_to_index(reg: &str) -> usize {
-    let reg_char = reg.chars().next().unwrap();
-    REG_INDICES
-        .iter()
-        .find(|(c, _)| *c == reg_char)
-        .map(|(_, idx)| *idx)
-        .unwrap_or_else(|| panic!("Invalid register"))
-}
+/// Type alias for the opcode execution function signature.
+pub type OpcodeExecFn = dyn Fn(&mut CPU, &mut dyn MemoryBusTrait) -> bool + Send + Sync;
 
 /// Represents a single CPU opcode and its execution logic.
 #[doc = "Each Opcode contains its mnemonic, timing, and the function to execute it."]
@@ -41,5 +20,5 @@ pub struct Opcode {
     /// Additional cycles for conditional instructions.
     pub conditional_cycles: u32,
     /// The function that executes the opcode. Returns true if a condition was met.
-    pub exec: Box<dyn Fn(&mut CPU, &mut dyn MemoryBusTrait) -> bool + Send + Sync>,
+    pub exec: Box<OpcodeExecFn>,
 }

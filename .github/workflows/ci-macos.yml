@@ -1,0 +1,82 @@
+name: CI (macOS)
+
+on:
+    push:
+        branches: [main, develop]
+    pull_request:
+        branches: [main, develop]
+
+jobs:
+    test:
+        name: Test (${{ matrix.os }} ${{ matrix.arch }} ${{ matrix.rust }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                include:
+                    - os: macos-latest
+                      arch: x86_64
+                      rust: stable
+                    - os: macos-latest-arm64
+                      arch: aarch64
+                      rust: stable
+                    - os: macos-latest-arm64
+                      arch: aarch64
+                      rust: beta
+                    - os: macos-latest-arm64
+                      arch: aarch64
+                      rust: nightly
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@v1
+              with:
+                  toolchain: ${{ matrix.rust }}
+            - uses: Swatinem/rust-cache@v2
+            - name: Test
+              run: cargo test --all-features --all-targets --locked
+            - name: Clippy
+              run: cargo clippy --all-targets --all-features
+            - name: Fmt
+              run: cargo fmt -- --check
+
+    coverage:
+        name: Coverage (${{ matrix.os }} ${{ matrix.arch }})
+        runs-on: ${{ matrix.os }}
+        needs: test
+        strategy:
+            matrix:
+                include:
+                    - os: macos-latest
+                      arch: x86_64
+                      rust: nightly
+                    - os: macos-latest-arm64
+                      arch: aarch64
+                      rust: nightly
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@v1
+              with:
+                  toolchain: nightly
+            - uses: Swatinem/rust-cache@v2
+            - name: Install cargo-llvm-cov
+              run: cargo install cargo-llvm-cov
+            - name: Run coverage
+              run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+            - name: Upload coverage artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: coverage-lcov
+                  path: lcov.info
+
+    msrv:
+        name: MSRV Check (cargo-msrv)
+        runs-on: macos-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@v1
+              with:
+                  toolchain: stable
+            - uses: Swatinem/rust-cache@v2
+            - name: Install cargo-msrv
+              run: cargo install cargo-msrv
+            - name: Find and check MSRV
+              run: cargo msrv verify --output-format json

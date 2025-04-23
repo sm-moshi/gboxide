@@ -3,20 +3,19 @@
 //
 // These tests use the public API to simulate real usage and verify integration, not just unit logic.
 
+use anyhow::Result;
 use core_lib::cpu::CPU;
 use core_lib::mmu::{GameBoyButton, MMU};
-use core_lib::ppu::PpuMode;
 use pretty_assertions::assert_eq;
-use tracing_subscriber;
 
 #[test]
-fn integration_cpu_mmu_basic_rom_execution() {
+fn integration_cpu_mmu_basic_rom_execution() -> Result<()> {
     // Use a valid ROM size (0x8000 bytes), with test program at 0x0100 (entry point)
     let mut rom = vec![0; 0x8000];
     rom[0x0100] = 0x00; // NOP
     rom[0x0101] = 0x00; // NOP
     rom[0x0102] = 0x76; // HALT
-    let mut mmu = MMU::new(rom).unwrap();
+    let mut mmu = MMU::new(rom)?;
     let mut cpu = CPU::new();
     cpu.regs.pc = 0x0100; // Start at entry point
     let mut steps = 0;
@@ -28,19 +27,19 @@ fn integration_cpu_mmu_basic_rom_execution() {
         }
         cpu.step(&mut mmu);
         steps += 1;
-        if steps > 10 {
-            panic!("CPU did not halt as expected");
-        }
+        assert!(steps <= 10, "CPU did not halt as expected");
     }
+    Ok(())
 }
 
 #[test]
-fn integration_dma_and_oam_transfer() {
+fn integration_dma_and_oam_transfer() -> Result<()> {
     let rom = vec![0; 0x8000];
-    let mut mmu = MMU::new(rom).unwrap();
+    let mut mmu = MMU::new(rom)?;
     // Fill WRAM with pattern
     for i in 0..0xA0 {
-        let _ = mmu.write(0xC000 + i, i as u8);
+        // Safe: i always fits in u8 for test data
+        let _ = mmu.write(0xC000 + i, u8::try_from(i).unwrap_or(0));
     }
     // Start DMA from WRAM
     let _ = mmu.write(0xFF46, 0xC0); // Source: 0xC000
@@ -48,19 +47,21 @@ fn integration_dma_and_oam_transfer() {
                    // Step additional cycles to ensure PPU is in HBlank/VBlank (OAM accessible)
     mmu.step(456 * 2); // Two scanlines
     for i in 0..0xA0 {
-        assert_eq!(mmu.read(0xFE00 + i), i as u8);
+        // Safe: i always fits in u8 for test data
+        assert_eq!(mmu.read(0xFE00 + i), u8::try_from(i).unwrap_or(0));
     }
+    Ok(())
 }
 
 #[test]
-fn integration_timer_interrupt() {
+fn integration_timer_interrupt() -> Result<()> {
     // Initialise tracing for debug output
     let _ = tracing_subscriber::fmt()
         .with_env_filter("debug")
         .with_test_writer()
         .try_init();
     let rom = vec![0; 0x8000];
-    let mut mmu = MMU::new(rom).unwrap();
+    let mut mmu = MMU::new(rom)?;
     // Enable timer and set modulo
     let _ = mmu.write(0xFF07, 0x05); // TAC: enable, freq 4096Hz
     let _ = mmu.write(0xFF06, 0xAB); // TMA
@@ -79,13 +80,14 @@ fn integration_timer_interrupt() {
         (if_reg & 0b100) != 0,
         "Timer interrupt not set in IF register"
     );
-    assert_eq!(mmu.timer.read(0xFF05).unwrap(), 0xAB); // TIMA reloaded
+    assert_eq!(mmu.timer.read(0xFF05)?, 0xAB); // TIMA reloaded
+    Ok(())
 }
 
 #[test]
-fn integration_ppu_sprite_rendering() {
+fn integration_ppu_sprite_rendering() -> Result<()> {
     let rom = vec![0; 0x8000];
-    let mut mmu = MMU::new(rom).unwrap();
+    let mut mmu = MMU::new(rom)?;
     // Set up a sprite in OAM
     let _ = mmu.write(0xFE00, 16); // Y
     let _ = mmu.write(0xFE01, 16); // X
@@ -101,16 +103,17 @@ fn integration_ppu_sprite_rendering() {
     mmu.step(456);
     let ly = mmu.read(0xFF44);
     // Check pixel in framebuffer (use public get_frame_buffer)
-    let pixel_index = ly as usize * core_lib::ppu::SCREEN_WIDTH + 8;
+    let pixel_index = ly as usize * 160 + 8; // SCREEN_WIDTH = 160
     let expected = core_lib::ppu::color::Color::WHITE;
     let fb = mmu.ppu.get_frame_buffer();
     assert_eq!(fb[pixel_index], expected);
+    Ok(())
 }
 
 #[test]
-fn integration_input_joypad_interrupt() {
+fn integration_input_joypad_interrupt() -> Result<()> {
     let rom = vec![0; 0x8000];
-    let mut mmu = MMU::new(rom).unwrap();
+    let mut mmu = MMU::new(rom)?;
     // Select action buttons (set bit 5 low)
     let _ = mmu.write(0xFF00, 0x20); // Select action (A/B/Start/Select)
                                      // Simulate releasing A (start with released state)
@@ -130,4 +133,5 @@ fn integration_input_joypad_interrupt() {
     // Simulate releasing A again
     mmu.update_joypad(GameBoyButton::A, false);
     // Interrupt should not be re-triggered (bit should remain set until cleared by CPU)
+    Ok(())
 }

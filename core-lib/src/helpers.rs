@@ -21,8 +21,10 @@ pub(crate) const fn unpack_tile_attributes(attr: u8) -> (u8, u8, bool, bool, boo
 /// - `tile_id`: Tile index
 /// - `signed`: If true, use signed addressing (0x9000 region)
 #[inline]
+#[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
 pub(crate) const fn tile_data_address(base: u16, tile_id: u8, signed: bool) -> u16 {
     if signed {
+        // SAFETY: This matches Game Boy hardware behaviour for signed tile addressing.
         base + ((tile_id as i8 as i16 + 128) as u16) * 16
     } else {
         base + (tile_id as u16) * 16

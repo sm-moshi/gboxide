@@ -1,5 +1,4 @@
 use crate::helpers::{extract_colour_index, tile_data_address, unpack_tile_attributes};
-/// core-lib/src/ppu/ppu.rs
 use crate::interrupts::InterruptFlag;
 
 use super::color::Color;
@@ -208,11 +207,11 @@ impl Ppu {
         let base = (palette_num as usize) * 8 + (color_idx as usize) * 2;
         let lo = self.bgp_data.get(base).copied().unwrap_or(0);
         let hi = self.bgp_data.get(base + 1).copied().unwrap_or(0);
-        let rgb15 = ((hi as u16) << 8) | (lo as u16);
+        let rgb15 = (u16::from(hi) << 8) | u16::from(lo);
         // Convert 15-bit BGR to 24-bit RGB
-        let r = ((rgb15 & 0x1F) << 3) as u8;
-        let g = (((rgb15 >> 5) & 0x1F) << 3) as u8;
-        let b = (((rgb15 >> 10) & 0x1F) << 3) as u8;
+        let r = u8::try_from((rgb15 & 0x1F) << 3).unwrap_or(0);
+        let g = u8::try_from(((rgb15 >> 5) & 0x1F) << 3).unwrap_or(0);
+        let b = u8::try_from(((rgb15 >> 10) & 0x1F) << 3).unwrap_or(0);
         Color { r, g, b, a: 0xFF }
     }
 
@@ -222,16 +221,17 @@ impl Ppu {
         let base = (palette_num as usize) * 8 + (color_idx as usize) * 2;
         let lo = self.obp_data.get(base).copied().unwrap_or(0);
         let hi = self.obp_data.get(base + 1).copied().unwrap_or(0);
-        let rgb15 = ((hi as u16) << 8) | (lo as u16);
-        let r = ((rgb15 & 0x1F) << 3) as u8;
-        let g = (((rgb15 >> 5) & 0x1F) << 3) as u8;
-        let b = (((rgb15 >> 10) & 0x1F) << 3) as u8;
+        let rgb15 = (u16::from(hi) << 8) | u16::from(lo);
+        let r = u8::try_from((rgb15 & 0x1F) << 3).unwrap_or(0);
+        let g = u8::try_from(((rgb15 >> 5) & 0x1F) << 3).unwrap_or(0);
+        let b = u8::try_from(((rgb15 >> 10) & 0x1F) << 3).unwrap_or(0);
         Color { r, g, b, a: 0xFF }
     }
 
     /// Render the window for the current scanline
     ///
     /// Note: The `_priority` variable is extracted for future CGB compatibility and to document the attribute layout, but is currently unused. Prefixing with underscore silences warnings. 🦀
+    #[allow(clippy::branches_sharing_code)]
     fn render_window(&mut self) {
         // Check if window is visible on this scanline
         if self.ly < self.wy || self.wx > 166 {
@@ -255,7 +255,7 @@ impl Ppu {
 
         // Calculate Y position in the window
         let window_y = self.window_line;
-        let tile_y = (window_y / 8) as u16;
+        let tile_y = u16::from(window_y / 8);
         let tile_y_offset = window_y % 8;
 
         // Calculate offset in the frame buffer for this scanline
@@ -266,13 +266,11 @@ impl Ppu {
 
         // Render window pixels
         for x in 0..SCREEN_WIDTH {
-            // Skip pixels to the left of the window
-            if (x as isize) < window_x {
+            if isize::try_from(x).unwrap_or(0) < window_x {
                 continue;
             }
-
-            // Calculate X position in the window
-            let window_x_pos = (x as isize - window_x) as u16;
+            let window_x_pos =
+                u16::try_from(isize::try_from(x).unwrap_or(0) - window_x).unwrap_or(0);
             let tile_x = window_x_pos / 8;
             let tile_x_offset = window_x_pos % 8;
 
@@ -281,6 +279,7 @@ impl Ppu {
             let tile_id = self.vram[tile_map_addr as usize];
 
             // CGB: Read tile attributes for palette, bank, flipping, priority
+            #[allow(clippy::used_underscore_binding)]
             let (palette_num, vram_bank, x_flip, y_flip, _priority) = if self.is_cgb {
                 let attr = self
                     .vram
@@ -303,20 +302,22 @@ impl Ppu {
             };
 
             let tile_line = if self.is_cgb && y_flip {
-                7 - tile_y_offset
+                7u16 - u16::from(tile_y_offset)
             } else {
-                tile_y_offset
+                u16::from(tile_y_offset)
             };
 
-            let tile_line_addr = tile_addr + (tile_line as u16) * 2;
-            let tile_data_low = self.vram[vram_offset + tile_line_addr as usize];
-            let tile_data_high = self.vram[vram_offset + tile_line_addr as usize + 1];
+            let tile_line_addr = tile_addr + tile_line * 2;
+            let tile_line_addr_usize = usize::from(tile_line_addr);
+            let tile_data_low = self.vram[vram_offset + tile_line_addr_usize];
+            let tile_data_high = self.vram[vram_offset + tile_line_addr_usize + 1];
 
-            let bit = if self.is_cgb && x_flip {
+            let bit = u8::try_from(if self.is_cgb && x_flip {
                 tile_x_offset
             } else {
                 7 - tile_x_offset
-            } as u8;
+            })
+            .unwrap_or(0);
             let color_idx = extract_colour_index(tile_data_low, tile_data_high, bit);
 
             let color = if self.is_cgb {
@@ -333,6 +334,7 @@ impl Ppu {
 
     /// Step the PPU by the given number of cycles
     /// Returns any interrupts that should be triggered
+    #[allow(clippy::branches_sharing_code)]
     pub fn step(&mut self, cycles: u32) -> Option<InterruptFlag> {
         if !self.is_lcd_enabled() {
             // LCD is disabled, don't do anything
@@ -378,7 +380,7 @@ impl Ppu {
 
                     self.mode_cycles -= PpuMode::HBlank.duration();
 
-                    if self.ly >= SCREEN_HEIGHT as u8 {
+                    if self.ly >= u8::try_from(SCREEN_HEIGHT).unwrap_or(0) {
                         // End of frame, transition to VBlank
                         self.set_mode(PpuMode::VBlank);
                         self.frame_ready = true; // Signal that a new frame is ready
@@ -479,7 +481,7 @@ impl Ppu {
         let signed = !self.lcdc.contains(LcdControl::BG_WINDOW_TILE_DATA);
 
         // Calculate Y position in the background map
-        let y_pos = (self.ly as u16 + self.scy as u16) & 0xFF;
+        let y_pos = (u16::from(self.ly) + u16::from(self.scy)) & 0xFF;
         let tile_y = y_pos / 8;
         let tile_y_offset = y_pos % 8;
 
@@ -487,7 +489,7 @@ impl Ppu {
         let scanline_offset = self.ly as usize * SCREEN_WIDTH;
 
         for x in 0..SCREEN_WIDTH {
-            let x_pos = (x as u16 + self.scx as u16) & 0xFF;
+            let x_pos = (u16::try_from(x).unwrap_or(0) + u16::from(self.scx)) & 0xFF;
             let tile_x = x_pos / 8;
             let tile_x_offset = x_pos % 8;
 
@@ -495,6 +497,7 @@ impl Ppu {
             let tile_id = self.vram[tile_map_addr as usize];
 
             // CGB: Read tile attributes for palette, bank, flipping, priority
+            #[allow(clippy::used_underscore_binding)]
             let (palette_num, vram_bank, x_flip, y_flip, _priority) = if self.is_cgb {
                 // Attribute map is at 0x2000 offset in VRAM
                 let attr = self
@@ -518,20 +521,22 @@ impl Ppu {
             };
 
             let tile_line = if self.is_cgb && y_flip {
-                7 - tile_y_offset
+                7u16 - tile_y_offset
             } else {
                 tile_y_offset
             };
 
-            let tile_line_addr = tile_addr + (tile_line as u16) * 2;
-            let tile_data_low = self.vram[vram_offset + tile_line_addr as usize];
-            let tile_data_high = self.vram[vram_offset + tile_line_addr as usize + 1];
+            let tile_line_addr = tile_addr + tile_line * 2;
+            let tile_line_addr_usize = usize::from(tile_line_addr);
+            let tile_data_low = self.vram[vram_offset + tile_line_addr_usize];
+            let tile_data_high = self.vram[vram_offset + tile_line_addr_usize + 1];
 
-            let bit = if self.is_cgb && x_flip {
+            let bit = u8::try_from(if self.is_cgb && x_flip {
                 tile_x_offset
             } else {
                 7 - tile_x_offset
-            } as u8;
+            })
+            .unwrap_or(0);
             let color_idx = extract_colour_index(tile_data_low, tile_data_high, bit);
 
             let color = if self.is_cgb {
@@ -562,7 +567,9 @@ impl Ppu {
             let y_pos = sprite.y_position();
 
             // Check if sprite is visible on this scanline
-            if y_pos <= self.ly as i32 && (y_pos + sprite_height as i32) > self.ly as i32 {
+            if y_pos <= i32::from(self.ly)
+                && (y_pos + i32::from(sprite_height)) > i32::from(self.ly)
+            {
                 visible_sprites.push(sprite);
                 if visible_sprites.len() >= MAX_SPRITES_PER_LINE {
                     break;
@@ -579,6 +586,7 @@ impl Ppu {
             let x_pos = sprite.x_position();
 
             // CGB: Read OAM attribute for palette, bank, flipping, priority
+            #[allow(clippy::used_underscore_binding)]
             let (palette_num, vram_bank, x_flip, y_flip, _priority) = if self.is_cgb {
                 unpack_tile_attributes(sprite.attributes)
             } else {
@@ -592,7 +600,7 @@ impl Ppu {
             };
 
             // Calculate which line of the sprite we're drawing
-            let mut line = (self.ly as i32 - y_pos) as u8;
+            let mut line = u8::try_from(i32::from(self.ly) - y_pos).unwrap_or(0);
             if y_flip {
                 line = (sprite_height - 1) - line;
             }
@@ -618,11 +626,11 @@ impl Ppu {
             // Draw each pixel of the sprite line
             for x in 0..8 {
                 let screen_x = x_pos + x;
-                if screen_x < 0 || screen_x >= SCREEN_WIDTH as i32 {
+                if screen_x < 0 || screen_x >= i32::try_from(SCREEN_WIDTH).unwrap_or(0) {
                     continue;
                 }
 
-                let bit = if x_flip { x } else { 7 - x } as u8;
+                let bit = u8::try_from(if x_flip { x } else { 7 - x }).unwrap_or(0);
                 let color_idx = extract_colour_index(low_byte, high_byte, bit);
 
                 // Skip transparent pixels (color 0)
@@ -640,7 +648,8 @@ impl Ppu {
                     };
                     Color::from_palette(color_idx, palette)
                 };
-                let pixel_index = self.ly as usize * SCREEN_WIDTH + screen_x as usize;
+                let pixel_index =
+                    self.ly as usize * SCREEN_WIDTH + usize::try_from(screen_x).unwrap_or(0);
 
                 // Check sprite priority
                 if (self.is_cgb && _priority) || (!self.is_cgb && !sprite.has_priority()) {
@@ -658,6 +667,9 @@ impl Ppu {
     }
 
     /// Read from a PPU register or memory
+    ///
+    /// # Errors
+    /// Returns an error if the address is invalid or the memory is locked (e.g., during pixel transfer).
     pub fn read(&self, addr: u16) -> Result<u8, PpuError> {
         match addr {
             // VRAM (0x8000-0x9FFF)
@@ -710,6 +722,10 @@ impl Ppu {
     }
 
     /// Write to a PPU register or memory
+    ///
+    /// # Errors
+    /// Returns an error if the address is invalid or the memory is locked (e.g., during pixel transfer).
+    #[allow(clippy::too_many_lines)]
     pub fn write(&mut self, addr: u16, value: u8) -> Result<(), PpuError> {
         match addr {
             // VRAM (0x8000-0x9FFF)

@@ -1,6 +1,6 @@
-/// core-lib/src/ppu/mod.rs
 use thiserror::Error;
 
+#[allow(clippy::module_inception)]
 pub mod ppu;
 pub use ppu::Ppu;
 

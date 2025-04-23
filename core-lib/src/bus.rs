@@ -1,4 +1,3 @@
-/// core-lib/src/bus.rs
 use crate::interrupts::InterruptFlag;
 use crate::mmu::{MemoryBusTrait, MMU};
 

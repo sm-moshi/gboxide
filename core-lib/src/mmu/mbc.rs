@@ -1,4 +1,3 @@
-/// core-lib/src/mmu/mbc.rs
 use thiserror::Error;
 
 /// Errors that can occur in Memory Bank Controllers
@@ -17,9 +16,15 @@ pub enum MbcError {
 /// Memory Bank Controller trait defining common functionality
 pub trait Mbc {
     /// Read a byte from the specified address
+    ///
+    /// # Errors
+    /// Returns an error if the address is invalid or RAM is disabled.
     fn read(&self, addr: u16) -> Result<u8, MbcError>;
 
     /// Write a byte to the specified address
+    ///
+    /// # Errors
+    /// Returns an error if the address is invalid or RAM is disabled.
     fn write(&mut self, addr: u16, value: u8) -> Result<(), MbcError>;
 
     /// Get the current ROM bank number
@@ -35,6 +40,9 @@ pub trait Mbc {
     fn save_ram(&self) -> Vec<u8>;
 
     /// Load a RAM state
+    ///
+    /// # Errors
+    /// Returns an error if the RAM data size is invalid.
     fn load_ram(&mut self, data: Vec<u8>) -> Result<(), MbcError>;
 }
 

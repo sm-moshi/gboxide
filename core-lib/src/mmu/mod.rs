@@ -1,4 +1,3 @@
-/// core-lib/src/mmu/mod.rs
 use crate::cartridge::Cartridge;
 use crate::interrupts::{InterruptFlag, Interrupts};
 use crate::ppu::{Ppu, PpuMode};
@@ -78,6 +77,10 @@ pub enum MmuError {
 /// Memory Bus trait for memory access operations
 pub trait MemoryBusTrait {
     fn read(&self, addr: u16) -> u8;
+    /// Write a byte to memory
+    ///
+    /// # Errors
+    /// Returns an error if the address is invalid or the underlying MBC fails.
     fn write(&mut self, addr: u16, value: u8) -> Result<(), MmuError>;
 
     /// Get the highest priority pending interrupt
@@ -116,6 +119,10 @@ pub struct MMU {
 
 #[allow(clippy::cast_possible_truncation)] // Intentional truncation for DMA cycles and memory addressing
 impl MMU {
+    /// Creates a new MMU instance from the given ROM data.
+    ///
+    /// # Errors
+    /// Returns an error if the cartridge or MBC cannot be created.
     #[must_use = "Returns a new MMU instance or an error if initialization fails"]
     pub fn new(rom: Vec<u8>) -> Result<Self, MmuError> {
         let cartridge = Cartridge::new(rom)?;
@@ -159,11 +166,20 @@ impl MMU {
         for _ in 0..bytes_to_transfer {
             let source_addr = self.dma_start_addr + u16::from(self.dma_byte);
             let data = match source_addr {
-                0x0000..=0x7FFF => self.mbc.read(source_addr).unwrap_or(0),
+                0x0000..=0x7FFF | 0xA000..=0xBFFF => self.mbc.read(source_addr).unwrap_or(0),
                 0x8000..=0x9FFF => self.vram[(source_addr - 0x8000) as usize],
-                0xA000..=0xBFFF => self.mbc.read(source_addr).unwrap_or(0),
                 0xC000..=0xDFFF => self.wram[(source_addr - 0xC000) as usize],
                 0xE000..=0xFDFF => self.wram[(source_addr - 0xE000) as usize],
+                0xFE00..=0xFE9F => {
+                    if self.dma_active {
+                        0xFF
+                    } else {
+                        match self.ppu.get_mode() {
+                            PpuMode::OamSearch | PpuMode::PixelTransfer => 0xFF,
+                            _ => self.oam[(source_addr - 0xFE00) as usize],
+                        }
+                    }
+                }
                 _ => 0xFF,
             };
             self.oam[self.dma_byte as usize] = data;
@@ -188,27 +204,17 @@ impl MMU {
         }
 
         match addr {
-            // ROM bank 0 (0x0000-0x3FFF)
-            0x0000..=0x3FFF => self.mbc.read(addr).unwrap_or(0xFF),
-
-            // ROM bank 1-N (0x4000-0x7FFF)
-            0x4000..=0x7FFF => self.mbc.read(addr).unwrap_or(0xFF),
-
+            // ROM bank 0/1-N (0x0000-0x7FFF)
+            0x0000..=0x7FFF | 0xA000..=0xBFFF => self.mbc.read(addr).unwrap_or(0xFF),
             // VRAM (0x8000-0x9FFF)
             0x8000..=0x9FFF => match self.ppu.get_mode() {
                 PpuMode::PixelTransfer => 0xFF,
                 _ => self.vram[(addr - 0x8000) as usize],
             },
-
-            // External RAM (0xA000-0xBFFF)
-            0xA000..=0xBFFF => self.mbc.read(addr).unwrap_or(0xFF),
-
             // Working RAM (0xC000-0xDFFF)
             0xC000..=0xDFFF => self.wram[(addr - 0xC000) as usize],
-
-            // Echo RAM (0xE000-0xFDFF)
+            // Echo RAM (0xE000-0xFDFF) mirrors 0xC000-0xDDFF
             0xE000..=0xFDFF => self.wram[(addr - 0xE000) as usize],
-
             // OAM (0xFE00-0xFE9F)
             0xFE00..=0xFE9F => {
                 if self.dma_active {
@@ -220,10 +226,8 @@ impl MMU {
                     }
                 }
             }
-
             // Unused (0xFEA0-0xFEFF)
             0xFEA0..=0xFEFF => 0xFF,
-
             // I/O registers (0xFF00-0xFF7F)
             0xFF00..=0xFF7F => {
                 match addr {
@@ -241,16 +245,17 @@ impl MMU {
                     _ => self.io_registers[(addr - 0xFF00) as usize],
                 }
             }
-
             // High RAM (0xFF80-0xFFFE)
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
-
             // Interrupt Enable Register (0xFFFF)
             0xFFFF => self.interrupts.borrow().read_ie(),
         }
     }
 
     /// Write a byte to memory
+    ///
+    /// # Errors
+    /// Returns an error if the address is invalid or the underlying MBC fails.
     pub fn write(&mut self, addr: u16, value: u8) -> Result<(), MmuError> {
         // During DMA, only HRAM is accessible
         if self.dma_active && !(0xFF80..=0xFFFE).contains(&addr) && addr != 0xFF46 {
@@ -258,32 +263,22 @@ impl MMU {
         }
 
         match addr {
-            // ROM bank 0 (0x0000-0x3FFF)
-            0x0000..=0x3FFF => self.mbc.write(addr, value)?,
-
-            // ROM bank 1-N (0x4000-0x7FFF)
-            0x4000..=0x7FFF => self.mbc.write(addr, value)?,
-
+            // ROM bank 0/1-N (0x0000-0x7FFF)
+            0x0000..=0x7FFF | 0xA000..=0xBFFF => self.mbc.write(addr, value)?,
             // VRAM (0x8000-0x9FFF)
             0x8000..=0x9FFF => {
                 if self.ppu.get_mode() != PpuMode::PixelTransfer {
                     self.vram[(addr - 0x8000) as usize] = value;
                 }
             }
-
-            // External RAM (0xA000-0xBFFF)
-            0xA000..=0xBFFF => self.mbc.write(addr, value)?,
-
             // Working RAM (0xC000-0xDFFF)
             0xC000..=0xDFFF => {
                 self.wram[(addr - 0xC000) as usize] = value;
             }
-
-            // Echo RAM (0xE000-0xFDFF)
+            // Echo RAM (0xE000-0xFDFF) mirrors 0xC000-0xDDFF
             0xE000..=0xFDFF => {
                 self.wram[(addr - 0xE000) as usize] = value;
             }
-
             // OAM (0xFE00-0xFE9F)
             0xFE00..=0xFE9F => {
                 if !self.dma_active
@@ -293,10 +288,8 @@ impl MMU {
                     self.oam[(addr - 0xFE00) as usize] = value;
                 }
             }
-
             // Unused (0xFEA0-0xFEFF)
             0xFEA0..=0xFEFF => {}
-
             // I/O registers (0xFF00-0xFF7F)
             0xFF00..=0xFF7F => {
                 match addr {
@@ -329,12 +322,10 @@ impl MMU {
                     }
                 }
             }
-
             // High RAM (0xFF80-0xFFFE)
             0xFF80..=0xFFFE => {
                 self.hram[(addr - 0xFF80) as usize] = value;
             }
-
             // Interrupt Enable Register (0xFFFF)
             0xFFFF => self.interrupts.borrow_mut().write_ie(value),
         }
@@ -361,6 +352,10 @@ impl MMU {
         self.mbc.save_ram()
     }
 
+    /// Load RAM data into the MBC
+    ///
+    /// # Errors
+    /// Returns an error if the RAM data size is invalid.
     pub fn load_ram(&mut self, data: Vec<u8>) -> Result<(), MbcError> {
         self.mbc.load_ram(data)
     }

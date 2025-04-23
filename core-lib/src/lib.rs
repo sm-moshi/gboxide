@@ -1,4 +1,3 @@
-/// core-lib/src/lib.rs
 pub mod bus;
 pub mod cartridge;
 pub mod cpu;

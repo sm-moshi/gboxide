@@ -4,3 +4,5 @@ target/
 *.pdb
 .idea/
 **/.DS_Store
+assets/binary
+assets/test-roms

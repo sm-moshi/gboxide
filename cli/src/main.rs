@@ -1,21 +1,9 @@
-use anyhow::{Context, Result};
-use clap::{Arg, CommandFactory, Parser, Subcommand};
-/// cli/src/main.rs
-use core_lib::{
-    cpu::CPU,
-    mmu::{GameBoyButton, MMU},
-};
-use std::{fs, path::PathBuf};
-use winit::application::ApplicationHandler;
-use winit::event::{ElementState, Event, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, NamedKey};
-use winit::window::WindowAttributes;
-use winit::window::{Window, WindowId};
-
 /// gboxide CLI
 ///
 /// Provides subcommands for running and testing Game Boy ROMs.
+use anyhow::Context;
+use clap::{Parser, Subcommand};
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -100,7 +88,7 @@ fn run_rom(
     use core_lib::{cpu::CPU, mmu::MMU};
     use std::process;
     use winit::application::ApplicationHandler;
-    use winit::event::{ElementState, Event, WindowEvent};
+    use winit::event::{ElementState, WindowEvent};
     use winit::event_loop::EventLoop;
     use winit::keyboard::{Key, NamedKey};
     use winit::window::{Window, WindowAttributes, WindowId};
@@ -130,7 +118,7 @@ fn run_rom(
                 return Ok(());
             }
             let cycles = cpu.step(&mut mmu);
-            mmu.step(u32::from(cycles));
+            mmu.step(cycles);
         }
         return Ok(());
     }
@@ -140,7 +128,7 @@ fn run_rom(
         mmu: MMU,
         cpu: CPU,
         debug: bool,
-        verbose: bool,
+        _verbose: bool,
     }
 
     impl EmulatorApp {
@@ -198,7 +186,7 @@ fn run_rom(
                     process::exit(0);
                 }
                 let cycles = self.cpu.step(&mut self.mmu);
-                self.mmu.step(u32::from(cycles));
+                self.mmu.step(cycles);
                 if self.debug {
                     // Print debug info (placeholder)
                     eprintln!("PC: {:04X}", self.cpu.regs.pc);
@@ -213,15 +201,15 @@ fn run_rom(
         mmu,
         cpu,
         debug,
-        verbose,
+        _verbose: verbose,
     };
-    event_loop.run_app(&mut app);
+    let _ = event_loop.run_app(&mut app);
     Ok(())
 }
 
 /// Run a test ROM in headless mode, capturing serial output and printing it.
 /// Returns exit code: 0 for pass, 1 for fail/timeout.
-fn run_test_rom(rom_path: &std::path::Path, debug: bool, verbose: bool) -> anyhow::Result<i32> {
+fn run_test_rom(rom_path: &std::path::Path, debug: bool, _verbose: bool) -> anyhow::Result<i32> {
     use core_lib::{cpu::CPU, mmu::MMU};
     const MAX_CYCLES: u64 = 10_000_000;
     const SERIAL_DATA: u16 = 0xFF01;
@@ -258,7 +246,7 @@ fn run_test_rom(rom_path: &std::path::Path, debug: bool, verbose: bool) -> anyho
             break;
         }
         let step_cycles = cpu.step(&mut mmu);
-        mmu.step(u32::from(step_cycles));
+        mmu.step(step_cycles);
         cycles += u64::from(step_cycles);
         step_count += 1;
 

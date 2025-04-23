@@ -1,0 +1,24 @@
+name: CI (Clippy Strict)
+
+on:
+    push:
+        branches: [main, develop]
+    pull_request:
+        branches: [main, develop]
+
+jobs:
+    clippy-strict:
+        name: Clippy Strict (${{ matrix.os }} ${{ matrix.target }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                os: [ubuntu-latest, macos-latest]
+                target: [x86_64]
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@v1
+              with:
+                  toolchain: nightly
+            - uses: Swatinem/rust-cache@v2
+            - name: Clippy Strict
+              run: cargo clippy --all-targets --all-features -- -D warnings

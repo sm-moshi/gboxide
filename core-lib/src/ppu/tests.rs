@@ -6,7 +6,6 @@ use super::{PpuMode, SCREEN_WIDTH};
 use super::{LCDC_ADDR, OAM_SIZE, SCX_ADDR, SCY_ADDR};
 use crate::interrupts::InterruptFlag;
 use anyhow::Result;
-/// core-lib/src/ppu/tests.rs
 use pretty_assertions::assert_eq;
 
 #[test]

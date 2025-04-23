@@ -1,11 +1,11 @@
-use assert_cmd::Command;
-use predicates::prelude::*;
-use std::path::Path;
-
 /// Integration test for the gboxide CLI
 ///
 /// This test checks that the CLI can run a real .gb ROM file using the 'run' subcommand.
 /// It verifies error handling for missing files and correct output for valid ROMs.
+use assert_cmd::Command;
+use predicates::prelude::*;
+use std::path::Path;
+
 #[test]
 fn run_real_rom_headless() {
     let rom_path = Path::new("test-roms/cpu_instrs/cpu_instrs.gb");

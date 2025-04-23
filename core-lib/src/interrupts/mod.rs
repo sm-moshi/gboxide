@@ -1,4 +1,3 @@
-/// core-lib/src/interrupts/mod.rs
 #[derive(Debug, Default)]
 pub struct Interrupts {
     /// Interrupt Enable (IE) register at 0xFFFF

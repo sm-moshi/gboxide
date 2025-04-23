@@ -1,6 +1,3 @@
-use anyhow::{anyhow, Result};
-/// core-lib/src/timer/mod.rs
-///
 /// # Timer Module
 ///
 /// The Game Boy timer system consists of several hardware components:
@@ -26,6 +23,7 @@ use anyhow::{anyhow, Result};
 ///
 /// The timer operates based on edge detection of specific bits in the DIV counter,
 /// depending on the frequency selected in TAC.
+use anyhow::{anyhow, Result};
 use bitflags::bitflags;
 use tracing::{debug, instrument, trace};
 
@@ -54,6 +52,7 @@ pub enum TimerState {
 }
 
 /// Main timer implementation
+#[allow(clippy::struct_excessive_bools)]
 pub struct Timer {
     /// Internal 16-bit counter that increments at 16384 Hz
     div_counter: u16,
@@ -162,13 +161,13 @@ impl Timer {
     }
 
     /// Get the current counter bit based on DIV and TAC
-    #[instrument(skip(self), level = "trace")]
+    #[allow(clippy::used_underscore_binding)]
     pub fn get_input(&self) -> bool {
         if !self.tac.contains(TacReg::TIMER_ENABLE) {
             return false;
         }
-        let mask = self.get_counter_mask();
-        (self.div_counter & mask) != 0
+        let _mask = self.get_counter_mask();
+        (self.div_counter & _mask) != 0
     }
 
     /// Get the current timer state
@@ -262,7 +261,7 @@ impl Timer {
 
             match self.state {
                 TimerState::Running => {
-                    let mask = self.get_counter_mask();
+                    let _mask = self.get_counter_mask();
                     let current_bit = self.get_input();
                     if self.prev_counter_bit && !current_bit {
                         debug!("step: Detected falling edge, calling increment_timer()");
@@ -533,12 +532,12 @@ impl Timer {
         }
     }
 
-    /// Step the timer and unwrap the result (for testing only)
-    #[cfg(test)]
-    #[allow(clippy::unwrap_used)]
-    #[allow(clippy::expect_used)]
-    pub fn step_unwrap(&mut self, cycles: u32) -> TimerState {
-        self.step(cycles).expect("Timer step should not fail")
+    /// Step the timer and return the new state.
+    ///
+    /// # Errors
+    /// Returns an error if the timer state is invalid or an internal error occurs.
+    pub fn step_unwrap(&mut self, cycles: u32) -> Result<TimerState, anyhow::Error> {
+        self.step(cycles)
     }
 }
 

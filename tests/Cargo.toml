@@ -5,9 +5,10 @@
 name    = "tests"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
-core-lib           = { path = "../core-lib" }
+core-lib           = { path = "../core-lib", version = "0.1.0" }
 anyhow             = { workspace = true }
 thiserror          = { workspace = true }
 tracing            = { workspace = true }
@@ -15,13 +16,12 @@ tracing-subscriber = { workspace = true }
 log                = { workspace = true }
 pretty_assertions  = { workspace = true }
 bitflags           = { workspace = true }
-serde              = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
-# Advanced testing tools
-insta     = { workspace = true }
-proptest  = { workspace = true }
-criterion = { workspace = true }
-# Add any additional test-only dependencies here
-
-# [lib] or [bin] section is not required for integration test crates
+anyhow             = { workspace = true }
+thiserror          = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+log                = { workspace = true }
+pretty_assertions  = { workspace = true }
+bitflags           = { workspace = true }

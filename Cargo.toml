@@ -1,8 +1,9 @@
 [workspace]
-members  = ["core-lib", "cli", "common", "tests"] #  "gui"]
+members  = ["core-lib", "cli", "tests"]
 resolver = "2"
 
 [workspace.package]
+version       = "0.1.0"
 edition       = "2021"
 rust-version  = "1.78.0"
 license       = "MIT OR Apache-2.0"
@@ -41,15 +42,17 @@ test-case         = "3.3.1"
 proptest          = "1.6.0"
 insta             = { version = "1.42.2", features = ["redactions", "yaml", "serde"] }
 criterion         = "0.5.1"
+serde             = { version = "1.0.219", features = ["derive"] }
+serde_json        = "1.0.140"
+getrandom         = { version = "0.3.2", features = ["js"] }
+bincode           = "2.0.1"
+memmap2           = "0.9.5"
+predicates        = "3.1.3"
+pastey            = "0.1.0"
+assert_cmd        = "2.0.17"
+once_cell         = "1.21.3"
 
-serde      = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
-
-getrandom    = { version = "0.3.2", features = ["js"] }
-js-sys       = "0.3.77"
-wasm-bindgen = "0.2.100"
-bincode      = "2.0.1"
-memmap2      = "0.9.5"
+[patch.crates-io]
 
 [profile.dev]
 opt-level        = 1
@@ -57,14 +60,13 @@ debug            = true
 overflow-checks  = true
 lto              = false
 debug-assertions = true
-incremental      = true
 
 [profile.dev.package]
 insta.opt-level   = 3
 similar.opt-level = 3
 
 [profile.release]
-opt-level     = "z"         # size-optimized; use "3" for performance
+opt-level     = 3
 lto           = true
 codegen-units = 1
 debug         = false
@@ -79,29 +81,18 @@ panic     = "abort"
 strip     = "symbols"
 
 [workspace.lints.clippy]
-# Allowed lints (temporarily noisy false positives)
-missing_errors_doc       = "allow"
-missing_panics_doc       = "allow"
-match_same_arms          = "allow"
-verbose_bit_mask         = "allow"
-cast_possible_wrap       = "allow"
-must_use_candidate       = "allow"
-cast_lossless            = "allow"
-cast_possible_truncation = "allow"
-cast_sign_loss           = "allow"
+# Denied lints (completely disallowed)
+unwrap_used                   = "deny"
+expect_used                   = "deny"
+todo                          = "deny"
+dbg_macro                     = "deny"
+empty_line_after_doc_comments = "deny"
 
-# Warning level lints
-# missing_docs    = "warn"
-# unreachable_pub = "warn"
-# unused_results = "warn"
+# Allowed lints (temporarily noisy false positives)
+verbose_bit_mask   = "allow"
+must_use_candidate = "allow"
 
 # Lint groups with priorities
 all      = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 nursery  = { level = "warn", priority = -1 }
-
-# Denied lints (completely disallowed)
-unwrap_used = "deny"
-expect_used = "deny"
-todo        = "deny"
-dbg_macro   = "deny"

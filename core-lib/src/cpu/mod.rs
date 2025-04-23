@@ -1,10 +1,6 @@
-use crate::mmu::MMU;
-use crate::Interrupts;
-/// core-lib/src/cpu/mod.rs
 use crate::MemoryBusTrait;
 mod opcodes;
 pub use opcodes::OPCODES;
-use std::cell::RefCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Default)]
@@ -24,7 +20,7 @@ pub struct Registers {
     pub sp: u16,
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Flags {
     pub zero: bool,
     pub subtract: bool,
@@ -81,6 +77,10 @@ impl Registers {
         self.sp = val;
     }
 
+    /// Returns the value of the named register.
+    ///
+    /// # Panics
+    /// Panics if the register name is not recognised.
     pub fn get_reg(&self, reg: &str) -> u8 {
         match reg {
             "a" => self.a,
@@ -95,6 +95,10 @@ impl Registers {
         }
     }
 
+    /// Sets the value of the named register.
+    ///
+    /// # Panics
+    /// Panics if the register name is not recognised.
     pub fn set_reg(&mut self, reg: &str, val: u8) {
         match reg {
             "a" => self.a = val,
@@ -118,6 +122,7 @@ impl Registers {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     pub fn set_flags(&mut self, flags: Flags) {
         self.f = 0;
         if flags.zero {
@@ -172,9 +177,9 @@ impl CPU {
             if self.ime {
                 self.ime = false;
                 self.regs.sp = self.regs.sp.wrapping_sub(1);
-                let _ = bus.write(self.regs.sp, (self.regs.pc >> 8) as u8);
+                let _ = bus.write(self.regs.sp, u8::try_from(self.regs.pc >> 8).unwrap_or(0));
                 self.regs.sp = self.regs.sp.wrapping_sub(1);
-                let _ = bus.write(self.regs.sp, self.regs.pc as u8);
+                let _ = bus.write(self.regs.sp, u8::try_from(self.regs.pc).unwrap_or(0));
                 bus.clear_interrupt(interrupt);
                 self.regs.pc = bus.get_interrupt_vector(interrupt);
                 self.current_cycles = 20;

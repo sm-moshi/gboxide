@@ -1,11 +1,11 @@
 [package]
-name    = "common"
-version = "0.1.0"
-edition = "2021"
+name        = "common"
+version     = "0.1.0"
+edition     = "2021"
+license     = "MIT OR Apache-2.0"
+description = "Common code for the gboxide project"
+homepage    = "https://github.com/sm-moshi/gboxide"
+repository  = "https://github.com/sm-moshi/gboxide"
 
 [dependencies]
-bitflags          = "2.9.0"
-serde             = { version = "1.0.219", features = ["derive"] }
-pretty_assertions = { workspace = true }
-anyhow            = { workspace = true }
-log               = { workspace = true }
+core-lib = { path = "../core-lib", version = "0.1.0" }

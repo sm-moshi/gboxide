@@ -4,10 +4,11 @@
 //!
 //! Keeping ALU logic separate improves clarity and maintainability.
 
-use super::types::Opcode;
-use crate::cpu::CPU;
-use crate::mmu::MemoryBusTrait;
+// use super::types::Opcode;
+// use crate::cpu::CPU;
+// use crate::mmu::MemoryBusTrait;
 
+#[macro_export]
 macro_rules! alu_add {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -30,6 +31,7 @@ macro_rules! alu_add {
     };
 }
 
+#[macro_export]
 macro_rules! alu_sub {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -51,6 +53,7 @@ macro_rules! alu_sub {
     };
 }
 
+#[macro_export]
 macro_rules! alu_and {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -67,6 +70,7 @@ macro_rules! alu_and {
     };
 }
 
+#[macro_export]
 macro_rules! alu_xor {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -82,6 +86,7 @@ macro_rules! alu_xor {
     };
 }
 
+#[macro_export]
 macro_rules! alu_or {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -97,6 +102,7 @@ macro_rules! alu_or {
     };
 }
 
+#[macro_export]
 macro_rules! alu_cp {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -117,6 +123,7 @@ macro_rules! alu_cp {
     };
 }
 
+#[macro_export]
 macro_rules! inc_r {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -136,6 +143,7 @@ macro_rules! inc_r {
     };
 }
 
+#[macro_export]
 macro_rules! dec_r {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -156,6 +164,7 @@ macro_rules! dec_r {
     };
 }
 
+#[macro_export]
 macro_rules! alu_add_n {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -178,6 +187,7 @@ macro_rules! alu_add_n {
     };
 }
 
+#[macro_export]
 macro_rules! alu_sub_n {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -200,6 +210,7 @@ macro_rules! alu_sub_n {
     };
 }
 
+#[macro_export]
 macro_rules! alu_and_n {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -218,6 +229,7 @@ macro_rules! alu_and_n {
     };
 }
 
+#[macro_export]
 macro_rules! alu_or_n {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -235,6 +247,7 @@ macro_rules! alu_or_n {
     };
 }
 
+#[macro_export]
 macro_rules! alu_xor_n {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -252,6 +265,7 @@ macro_rules! alu_xor_n {
     };
 }
 
+#[macro_export]
 macro_rules! alu_cp_n {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -288,6 +302,7 @@ macro_rules! alu_cp_n {
     };
 }
 
+#[macro_export]
 macro_rules! alu_adc_n {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -298,7 +313,7 @@ macro_rules! alu_adc_n {
                 let n = bus.read(cpu.regs.pc);
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 let a = cpu.regs.a;
-                let c = if cpu.regs.f & 0x10 != 0 { 1 } else { 0 };
+                let c = u8::from(cpu.regs.f & 0x10 != 0);
                 let result = a.wrapping_add(n).wrapping_add(c);
                 cpu.regs.f = 0;
                 if result == 0 {
@@ -307,7 +322,7 @@ macro_rules! alu_adc_n {
                 if (a & 0xF) + (n & 0xF) + c > 0xF {
                     cpu.regs.f |= 0x20;
                 }
-                if (a as u16) + (n as u16) + (c as u16) > 0xFF {
+                if u16::from(a) + u16::from(n) + u16::from(c) > 0xFF {
                     cpu.regs.f |= 0x10;
                 }
                 cpu.regs.a = result;
@@ -317,6 +332,7 @@ macro_rules! alu_adc_n {
     };
 }
 
+#[macro_export]
 macro_rules! alu_sbc_n {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -327,7 +343,7 @@ macro_rules! alu_sbc_n {
                 let n = bus.read(cpu.regs.pc);
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 let a = cpu.regs.a;
-                let c = if cpu.regs.f & 0x10 != 0 { 1 } else { 0 };
+                let c = u8::from(cpu.regs.f & 0x10 != 0);
                 let result = a.wrapping_sub(n).wrapping_sub(c);
                 cpu.regs.f = 0x40;
                 if result == 0 {
@@ -336,7 +352,7 @@ macro_rules! alu_sbc_n {
                 if (a & 0xF) < ((n & 0xF) + c) {
                     cpu.regs.f |= 0x20;
                 }
-                if (n as u16) + (c as u16) > (a as u16) {
+                if u16::from(n) + u16::from(c) > u16::from(a) {
                     cpu.regs.f |= 0x10;
                 }
                 cpu.regs.a = result;
@@ -346,19 +362,19 @@ macro_rules! alu_sbc_n {
     };
 }
 
-pub(crate) use alu_adc_n;
-pub(crate) use alu_add;
-pub(crate) use alu_add_n;
-pub(crate) use alu_and;
-pub(crate) use alu_and_n;
-pub(crate) use alu_cp;
-pub(crate) use alu_cp_n;
-pub(crate) use alu_or;
-pub(crate) use alu_or_n;
-pub(crate) use alu_sbc_n;
-pub(crate) use alu_sub;
-pub(crate) use alu_sub_n;
-pub(crate) use alu_xor;
-pub(crate) use alu_xor_n;
-pub(crate) use dec_r;
-pub(crate) use inc_r;
+pub use alu_adc_n;
+pub use alu_add;
+pub use alu_add_n;
+pub use alu_and;
+pub use alu_and_n;
+pub use alu_cp;
+pub use alu_cp_n;
+pub use alu_or;
+pub use alu_or_n;
+pub use alu_sbc_n;
+pub use alu_sub;
+pub use alu_sub_n;
+pub use alu_xor;
+pub use alu_xor_n;
+pub use dec_r;
+pub use inc_r;

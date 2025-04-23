@@ -17,10 +17,10 @@ pub struct Mbc5 {
 impl Mbc5 {
     pub fn new(rom: Vec<u8>) -> Self {
         // RAM size: up to 128KB (16 banks)
-        let ram = vec![0; 0x20000];
+        let ram_buf = vec![0; 0x20000];
         Self {
             rom,
-            ram,
+            ram: ram_buf,
             ram_enabled: false,
             rom_bank: 1,
             ram_bank: 0,
@@ -61,12 +61,12 @@ impl Mbc for Mbc5 {
             }
             // ROM Bank Number (lower 8 bits)
             0x2000..=0x2FFF => {
-                self.rom_bank = (self.rom_bank & 0x100) | (value as u16);
+                self.rom_bank = (self.rom_bank & 0x100) | u16::from(value);
                 Ok(())
             }
             // ROM Bank Number (9th bit)
             0x3000..=0x3FFF => {
-                self.rom_bank = (self.rom_bank & 0xFF) | (((value & 0x01) as u16) << 8);
+                self.rom_bank = (self.rom_bank & 0xFF) | (u16::from(value & 0x01) << 8);
                 Ok(())
             }
             // RAM Bank Number / Rumble (bit 3)

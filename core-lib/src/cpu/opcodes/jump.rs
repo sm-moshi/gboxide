@@ -4,10 +4,16 @@
 //!
 //! Keeping jump/call/return logic separate improves clarity and maintainability.
 
-use super::types::Opcode;
-use crate::cpu::CPU;
-use crate::mmu::MemoryBusTrait;
+// use super::types::Opcode;
+// use crate::cpu::CPU;
+// use crate::mmu::MemoryBusTrait;
 
+/// Adds a signed i8 offset to a u16, wrapping as needed (Clippy-compliant).
+pub fn wrapping_add_signed_u16(val: u16, offset: i8) -> u16 {
+    u16::try_from((i32::from(val) + i32::from(offset)).wrapping_rem_euclid(1 << 16)).unwrap_or(0)
+}
+
+#[macro_export]
 macro_rules! jp_cc_nn {
     ($table:ident, $code:expr, $cc:expr, $flag:expr, $expected:expr) => {
         $table[$code] = Opcode {
@@ -27,6 +33,7 @@ macro_rules! jp_cc_nn {
     };
 }
 
+#[macro_export]
 macro_rules! jr_cc_e {
     ($table:ident, $code:expr, $cc:expr, $flag:expr, $expected:expr) => {
         $table[$code] = Opcode {
@@ -34,10 +41,10 @@ macro_rules! jr_cc_e {
             base_cycles: 12,
             conditional_cycles: 0,
             exec: Box::new(|cpu, bus| {
-                let e = bus.read(cpu.regs.pc) as i8;
+                let e = i8::from_le_bytes([bus.read(cpu.regs.pc)]);
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 if (cpu.regs.f & $flag) == $expected {
-                    cpu.regs.pc = cpu.regs.pc.wrapping_add(e as u16);
+                    cpu.regs.pc = wrapping_add_signed_u16(cpu.regs.pc, e);
                 }
                 false
             }),
@@ -45,6 +52,7 @@ macro_rules! jr_cc_e {
     };
 }
 
+#[macro_export]
 macro_rules! call_cc_nn {
     ($table:ident, $code:expr, $cc:expr, $flag:expr, $expected:expr) => {
         $table[$code] = Opcode {
@@ -58,9 +66,9 @@ macro_rules! call_cc_nn {
                 if (cpu.regs.f & $flag) == $expected {
                     // Push current PC to stack
                     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-                    let _ = bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
+                    let _ = bus.write(cpu.regs.sp, u8::try_from(cpu.regs.pc >> 8).unwrap_or(0));
                     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-                    let _ = bus.write(cpu.regs.sp, cpu.regs.pc as u8);
+                    let _ = bus.write(cpu.regs.sp, u8::try_from(cpu.regs.pc).unwrap_or(0));
                     // Jump to target address
                     cpu.regs.pc = u16::from_le_bytes([low, high]);
                 }
@@ -70,6 +78,7 @@ macro_rules! call_cc_nn {
     };
 }
 
+#[macro_export]
 macro_rules! ret_cc {
     ($table:ident, $code:expr, $cc:expr, $flag:expr, $expected:expr) => {
         $table[$code] = Opcode {
@@ -90,6 +99,7 @@ macro_rules! ret_cc {
     };
 }
 
+#[macro_export]
 macro_rules! jp_nn {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -106,6 +116,7 @@ macro_rules! jp_nn {
     };
 }
 
+#[macro_export]
 macro_rules! jp_hl {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -120,6 +131,7 @@ macro_rules! jp_hl {
     };
 }
 
+#[macro_export]
 macro_rules! jr_e {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -127,15 +139,16 @@ macro_rules! jr_e {
             base_cycles: 12,
             conditional_cycles: 0,
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
-                let e = bus.read(cpu.regs.pc) as i8;
+                let e = i8::from_le_bytes([bus.read(cpu.regs.pc)]);
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
-                cpu.regs.pc = cpu.regs.pc.wrapping_add(e as u16);
+                cpu.regs.pc = wrapping_add_signed_u16(cpu.regs.pc, e);
                 false
             }),
         };
     };
 }
 
+#[macro_export]
 macro_rules! call_nn {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -147,9 +160,9 @@ macro_rules! call_nn {
                 let high = bus.read(cpu.regs.pc.wrapping_add(1));
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(2);
                 cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-                let _ = bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
+                let _ = bus.write(cpu.regs.sp, u8::try_from(cpu.regs.pc >> 8).unwrap_or(0));
                 cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-                let _ = bus.write(cpu.regs.sp, cpu.regs.pc as u8);
+                let _ = bus.write(cpu.regs.sp, u8::try_from(cpu.regs.pc).unwrap_or(0));
                 cpu.regs.pc = u16::from_le_bytes([low, high]);
                 false
             }),
@@ -157,6 +170,7 @@ macro_rules! call_nn {
     };
 }
 
+#[macro_export]
 macro_rules! ret {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -175,6 +189,7 @@ macro_rules! ret {
     };
 }
 
+#[macro_export]
 macro_rules! reti {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -193,6 +208,7 @@ macro_rules! reti {
     };
 }
 
+#[macro_export]
 macro_rules! rst {
     ($table:ident, $code:expr, $addr:expr) => {
         $table[$code] = Opcode {
@@ -201,9 +217,9 @@ macro_rules! rst {
             conditional_cycles: 0,
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
                 cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-                let _ = bus.write(cpu.regs.sp, (cpu.regs.pc >> 8) as u8);
+                let _ = bus.write(cpu.regs.sp, u8::try_from(cpu.regs.pc >> 8).unwrap_or(0));
                 cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-                let _ = bus.write(cpu.regs.sp, cpu.regs.pc as u8);
+                let _ = bus.write(cpu.regs.sp, u8::try_from(cpu.regs.pc).unwrap_or(0));
                 cpu.regs.pc = $addr;
                 false
             }),
@@ -211,6 +227,7 @@ macro_rules! rst {
     };
 }
 
+#[macro_export]
 macro_rules! di {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -225,6 +242,7 @@ macro_rules! di {
     };
 }
 
+#[macro_export]
 macro_rules! ei {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -239,6 +257,7 @@ macro_rules! ei {
     };
 }
 
+#[macro_export]
 macro_rules! halt {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -253,6 +272,7 @@ macro_rules! halt {
     };
 }
 
+#[macro_export]
 macro_rules! stop {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -270,18 +290,18 @@ macro_rules! stop {
     };
 }
 
-pub(crate) use call_cc_nn;
-pub(crate) use call_nn;
-pub(crate) use di;
-pub(crate) use ei;
-pub(crate) use halt;
-pub(crate) use jp_cc_nn;
-pub(crate) use jp_hl;
-pub(crate) use jp_nn;
-pub(crate) use jr_cc_e;
-pub(crate) use jr_e;
-pub(crate) use ret;
-pub(crate) use ret_cc;
-pub(crate) use reti;
-pub(crate) use rst;
-pub(crate) use stop;
+pub use call_cc_nn;
+pub use call_nn;
+pub use di;
+pub use ei;
+pub use halt;
+pub use jp_cc_nn;
+pub use jp_hl;
+pub use jp_nn;
+pub use jr_cc_e;
+pub use jr_e;
+pub use ret;
+pub use ret_cc;
+pub use reti;
+pub use rst;
+pub use stop;

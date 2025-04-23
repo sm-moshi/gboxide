@@ -5,8 +5,6 @@
 //! Keeping CB-prefixed logic separate improves clarity and maintainability.
 
 use super::types::Opcode;
-use crate::cpu::CPU;
-use crate::mmu::MemoryBusTrait;
 use once_cell::sync::Lazy;
 
 // The CB-prefixed opcode table is constructed here.
@@ -22,7 +20,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
     let regs = ["b", "c", "d", "e", "h", "l", "hl", "a"];
     // RLC
     for (i, &reg) in regs.iter().enumerate() {
-        table[0x00 + i] = Opcode {
+        table[i] = Opcode {
             mnemonic: Box::leak(format!("CB RLC {reg}").into_boxed_str()),
             base_cycles: if reg == "hl" { 16 } else { 8 },
             conditional_cycles: 0,
@@ -90,7 +88,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.get_reg(reg)
                 };
-                let c = if cpu.regs.f & 0x10 != 0 { 1 } else { 0 };
+                let c = u8::from(cpu.regs.f & 0x10 != 0);
                 let res = (val << 1) | c;
                 cpu.regs.f = 0;
                 if res == 0 {
@@ -120,7 +118,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.get_reg(reg)
                 };
-                let c = if cpu.regs.f & 0x10 != 0 { 0x80 } else { 0 };
+                let c = u8::from(cpu.regs.f & 0x10 != 0);
                 let res = (val >> 1) | c;
                 cpu.regs.f = 0;
                 if res == 0 {

@@ -3,6 +3,7 @@
 //! This module re-exports all opcode types, helpers, and submodules for use in the CPU implementation.
 //!
 //! Modularising opcodes improves clarity, maintainability, and testability.
+use once_cell::sync::Lazy;
 use pastey::paste;
 
 pub mod alu;
@@ -14,14 +15,12 @@ pub mod types;
 
 pub use alu::*;
 pub use cb::CB_OPCODES;
-pub use helpers::*;
 pub use jump::*;
 pub use load_store::*;
 pub use types::*;
 
 use crate::cpu::CPU;
 use crate::mmu::MemoryBusTrait;
-use once_cell::sync::Lazy;
 
 /// The main opcode table for the CPU (0x00..=0xFF).
 ///
@@ -578,7 +577,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 exec: Box::new(|cpu, _| {
                     let a = cpu.regs.a;
                     let v = cpu.regs.$reg;
-                    let c = if cpu.regs.f & 0x10 != 0 { 1 } else { 0 };
+                    let c = u8::from(cpu.regs.f & 0x10 != 0);
                     let result = a.wrapping_add(v).wrapping_add(c);
                     cpu.regs.f = 0;
                     if result == 0 {
@@ -587,7 +586,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                     if (a & 0xF) + (v & 0xF) + c > 0xF {
                         cpu.regs.f |= 0x20;
                     }
-                    if (a as u16) + (v as u16) + (c as u16) > 0xFF {
+                    if u16::from(a) + u16::from(v) + u16::from(c) > 0xFF {
                         cpu.regs.f |= 0x10;
                     }
                     cpu.regs.a = result;
@@ -612,7 +611,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 exec: Box::new(|cpu, _| {
                     let a = cpu.regs.a;
                     let v = cpu.regs.$reg;
-                    let c = if cpu.regs.f & 0x10 != 0 { 1 } else { 0 };
+                    let c = u8::from(cpu.regs.f & 0x10 != 0);
                     let result = a.wrapping_sub(v).wrapping_sub(c);
                     cpu.regs.f = 0x40;
                     if result == 0 {
@@ -621,7 +620,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                     if (a & 0xF) < ((v & 0xF) + c) {
                         cpu.regs.f |= 0x20;
                     }
-                    if (v as u16) + (c as u16) > (a as u16) {
+                    if u16::from(v) + u16::from(c) > u16::from(a) {
                         cpu.regs.f |= 0x10;
                     }
                     cpu.regs.a = result;
@@ -712,16 +711,21 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         base_cycles: 16,
         conditional_cycles: 0,
         exec: Box::new(|cpu, bus| {
-            let e = bus.read(cpu.regs.pc) as i8 as i16 as u16;
+            #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+            // These casts are required for hardware-accurate signed offset addition (Game Boy CPU).
+            let e = i16::from(bus.read(cpu.regs.pc) as i8);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             let sp = cpu.regs.sp;
-            let result = sp.wrapping_add(e);
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+            let result = (sp as i16).wrapping_add(e) as u16;
             cpu.regs.sp = result;
             cpu.regs.f = 0;
-            if ((sp & 0xF) + (e & 0xF)) > 0xF {
+            #[allow(clippy::cast_sign_loss)]
+            if ((sp & 0xF) + (e as u16 & 0xF)) > 0xF {
                 cpu.regs.f |= 0x20;
             }
-            if ((sp & 0xFF) + (e & 0xFF)) > 0xFF {
+            #[allow(clippy::cast_sign_loss)]
+            if ((sp & 0xFF) + (e as u16 & 0xFF)) > 0xFF {
                 cpu.regs.f |= 0x10;
             }
             false
@@ -736,7 +740,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: Box::new(|cpu, _| {
             let a = cpu.regs.a;
             let v = cpu.regs.l;
-            let c = if cpu.regs.f & 0x10 != 0 { 1 } else { 0 };
+            let c = u8::from(cpu.regs.f & 0x10 != 0);
             let result = a.wrapping_add(v).wrapping_add(c);
             cpu.regs.f = 0;
             if result == 0 {
@@ -745,7 +749,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if (a & 0xF) + (v & 0xF) + c > 0xF {
                 cpu.regs.f |= 0x20;
             }
-            if (a as u16) + (v as u16) + (c as u16) > 0xFF {
+            if u16::from(a) + u16::from(v) + u16::from(c) > 0xFF {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;
@@ -760,7 +764,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: Box::new(|cpu, _| {
             let a = cpu.regs.a;
             let v = cpu.regs.a;
-            let c = if cpu.regs.f & 0x10 != 0 { 1 } else { 0 };
+            let c = u8::from(cpu.regs.f & 0x10 != 0);
             let result = a.wrapping_add(v).wrapping_add(c);
             cpu.regs.f = 0;
             if result == 0 {
@@ -769,7 +773,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if (a & 0xF) + (v & 0xF) + c > 0xF {
                 cpu.regs.f |= 0x20;
             }
-            if (a as u16) + (v as u16) + (c as u16) > 0xFF {
+            if u16::from(a) + u16::from(v) + u16::from(c) > 0xFF {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;
@@ -807,7 +811,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: Box::new(|cpu, _| {
             let a = cpu.regs.a;
             let v = cpu.regs.l;
-            let c = if cpu.regs.f & 0x10 != 0 { 1 } else { 0 };
+            let c = u8::from(cpu.regs.f & 0x10 != 0);
             let result = a.wrapping_sub(v).wrapping_sub(c);
             cpu.regs.f = 0x40;
             if result == 0 {
@@ -816,7 +820,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if (a & 0xF) < ((v & 0xF) + c) {
                 cpu.regs.f |= 0x20;
             }
-            if (v as u16) + (c as u16) > (a as u16) {
+            if u16::from(v) + u16::from(c) > u16::from(a) {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;
@@ -831,7 +835,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: Box::new(|cpu, _| {
             let a = cpu.regs.a;
             let v = cpu.regs.a;
-            let c = if cpu.regs.f & 0x10 != 0 { 1 } else { 0 };
+            let c = u8::from(cpu.regs.f & 0x10 != 0);
             let result = a.wrapping_sub(v).wrapping_sub(c);
             cpu.regs.f = 0x40;
             if result == 0 {
@@ -840,7 +844,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if (a & 0xF) < ((v & 0xF) + c) {
                 cpu.regs.f |= 0x20;
             }
-            if (v as u16) + (c as u16) > (a as u16) {
+            if u16::from(a) + u16::from(v) + u16::from(c) > 0xFF {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;

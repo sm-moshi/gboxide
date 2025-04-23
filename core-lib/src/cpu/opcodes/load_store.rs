@@ -4,11 +4,11 @@
 //!
 //! Keeping load/store logic separate improves clarity and maintainability.
 
-use super::types::Opcode;
-use crate::cpu::CPU;
-use crate::mmu::MemoryBusTrait;
-use pastey::paste;
+// use super::types::Opcode;
+// use crate::cpu::CPU;
+// use crate::mmu::MemoryBusTrait;
 
+#[macro_export]
 macro_rules! ld_r_r {
     ($table:ident, $code:expr, $dst:ident, $src:ident) => {
         $table[$code] = Opcode {
@@ -26,6 +26,7 @@ macro_rules! ld_r_r {
     };
 }
 
+#[macro_export]
 macro_rules! ld_r_hl {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -41,6 +42,7 @@ macro_rules! ld_r_hl {
     };
 }
 
+#[macro_export]
 macro_rules! ld_hl_r {
     ($table:ident, $code:expr, $reg:ident) => {
         $table[$code] = Opcode {
@@ -56,6 +58,7 @@ macro_rules! ld_hl_r {
     };
 }
 
+#[macro_export]
 macro_rules! inc_rr {
     ($table:ident, $code:expr, $rr:ident) => {
         paste! {
@@ -77,6 +80,7 @@ macro_rules! inc_rr {
     };
 }
 
+#[macro_export]
 macro_rules! dec_rr {
     ($table:ident, $code:expr, $rr:ident) => {
         paste! {
@@ -98,6 +102,7 @@ macro_rules! dec_rr {
     };
 }
 
+#[macro_export]
 macro_rules! ld_rr_nn {
     ($table:ident, $code:expr, $rr:ident) => {
         paste! {
@@ -122,6 +127,7 @@ macro_rules! ld_rr_nn {
     };
 }
 
+#[macro_export]
 macro_rules! push_rr {
     ($table:ident, $code:expr, $rr:ident) => {
         paste! {
@@ -136,9 +142,9 @@ macro_rules! push_rr {
                         cpu.regs.$rr()
                     };
                     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-                    let _ = bus.write(cpu.regs.sp, (value >> 8) as u8);
+                    let _ = bus.write(cpu.regs.sp, u8::try_from(value >> 8).unwrap_or(0));
                     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
-                    let _ = bus.write(cpu.regs.sp, value as u8);
+                    let _ = bus.write(cpu.regs.sp, u8::try_from(value).unwrap_or(0));
                     false
                 }),
             };
@@ -146,6 +152,7 @@ macro_rules! push_rr {
     };
 }
 
+#[macro_export]
 macro_rules! pop_rr {
     ($table:ident, $code:expr, $rr:ident) => {
         paste! {
@@ -172,6 +179,7 @@ macro_rules! pop_rr {
     };
 }
 
+#[macro_export]
 macro_rules! add_hl_rr {
     ($table:ident, $code:expr, $rr:ident) => {
         $table[$code] = Opcode {
@@ -201,6 +209,7 @@ macro_rules! add_hl_rr {
     };
 }
 
+#[macro_export]
 macro_rules! ld_nn_sp {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -212,14 +221,18 @@ macro_rules! ld_nn_sp {
                 let high = bus.read(cpu.regs.pc.wrapping_add(1));
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(2);
                 let addr = u16::from_le_bytes([low, high]);
-                let _ = bus.write(addr, (cpu.regs.sp & 0xFF) as u8);
-                let _ = bus.write(addr.wrapping_add(1), (cpu.regs.sp >> 8) as u8);
+                let _ = bus.write(addr, u8::try_from(cpu.regs.sp & 0xFF).unwrap_or(0));
+                let _ = bus.write(
+                    addr.wrapping_add(1),
+                    u8::try_from(cpu.regs.sp >> 8).unwrap_or(0),
+                );
                 false
             }),
         };
     };
 }
 
+#[macro_export]
 macro_rules! ld_a_bc {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -234,6 +247,7 @@ macro_rules! ld_a_bc {
     };
 }
 
+#[macro_export]
 macro_rules! ld_a_de {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -248,6 +262,7 @@ macro_rules! ld_a_de {
     };
 }
 
+#[macro_export]
 macro_rules! ld_bc_a {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -262,6 +277,7 @@ macro_rules! ld_bc_a {
     };
 }
 
+#[macro_export]
 macro_rules! ld_de_a {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -276,6 +292,7 @@ macro_rules! ld_de_a {
     };
 }
 
+#[macro_export]
 macro_rules! ld_a_nn {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -294,6 +311,7 @@ macro_rules! ld_a_nn {
     };
 }
 
+#[macro_export]
 macro_rules! ld_nn_a {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -312,6 +330,7 @@ macro_rules! ld_nn_a {
     };
 }
 
+#[macro_export]
 macro_rules! ld_a_c {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -327,6 +346,7 @@ macro_rules! ld_a_c {
     };
 }
 
+#[macro_export]
 macro_rules! ld_c_a {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -342,6 +362,7 @@ macro_rules! ld_c_a {
     };
 }
 
+#[macro_export]
 macro_rules! ld_a_hld {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -358,6 +379,7 @@ macro_rules! ld_a_hld {
     };
 }
 
+#[macro_export]
 macro_rules! ld_hld_a {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -374,6 +396,7 @@ macro_rules! ld_hld_a {
     };
 }
 
+#[macro_export]
 macro_rules! ld_a_hli {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -390,6 +413,7 @@ macro_rules! ld_a_hli {
     };
 }
 
+#[macro_export]
 macro_rules! ld_hli_a {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -406,6 +430,7 @@ macro_rules! ld_hli_a {
     };
 }
 
+#[macro_export]
 macro_rules! ld_sp_hl {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -420,6 +445,7 @@ macro_rules! ld_sp_hl {
     };
 }
 
+#[macro_export]
 macro_rules! ld_hl_sp_e {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -427,16 +453,21 @@ macro_rules! ld_hl_sp_e {
             base_cycles: 12,
             conditional_cycles: 0,
             exec: Box::new(|cpu, bus| {
-                let e = bus.read(cpu.regs.pc) as i8 as i16 as u16;
+                #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+                // These casts are required for hardware-accurate signed offset addition (Game Boy CPU).
+                let e = i16::from(bus.read(cpu.regs.pc) as i8);
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 let sp = cpu.regs.sp;
-                let result = sp.wrapping_add(e);
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+                let result = (sp as i16).wrapping_add(e) as u16;
                 cpu.regs.set_hl(result);
                 cpu.regs.f = 0;
-                if ((sp & 0xF) + (e & 0xF)) > 0xF {
+                #[allow(clippy::cast_sign_loss)]
+                if ((sp & 0xF) + (e as u16 & 0xF)) > 0xF {
                     cpu.regs.f |= 0x20;
                 }
-                if ((sp & 0xFF) + (e & 0xFF)) > 0xFF {
+                #[allow(clippy::cast_sign_loss)]
+                if ((sp & 0xFF) + (e as u16 & 0xFF)) > 0xFF {
                     cpu.regs.f |= 0x10;
                 }
                 false
@@ -445,6 +476,7 @@ macro_rules! ld_hl_sp_e {
     };
 }
 
+#[macro_export]
 macro_rules! ld_ff00_n_a {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -462,6 +494,7 @@ macro_rules! ld_ff00_n_a {
     };
 }
 
+#[macro_export]
 macro_rules! ld_a_ff00_n {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -479,6 +512,7 @@ macro_rules! ld_a_ff00_n {
     };
 }
 
+#[macro_export]
 macro_rules! ld_a_a16 {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -497,6 +531,7 @@ macro_rules! ld_a_a16 {
     };
 }
 
+#[macro_export]
 macro_rules! ld_a16_a {
     ($table:ident, $code:expr) => {
         $table[$code] = Opcode {
@@ -515,31 +550,31 @@ macro_rules! ld_a16_a {
     };
 }
 
-pub(crate) use add_hl_rr;
-pub(crate) use dec_rr;
-pub(crate) use inc_rr;
-pub(crate) use ld_a16_a;
-pub(crate) use ld_a_a16;
-pub(crate) use ld_a_bc;
-pub(crate) use ld_a_c;
-pub(crate) use ld_a_de;
-pub(crate) use ld_a_ff00_n;
-pub(crate) use ld_a_hld;
-pub(crate) use ld_a_hli;
-pub(crate) use ld_a_nn;
-pub(crate) use ld_bc_a;
-pub(crate) use ld_c_a;
-pub(crate) use ld_de_a;
-pub(crate) use ld_ff00_n_a;
-pub(crate) use ld_hl_r;
-pub(crate) use ld_hl_sp_e;
-pub(crate) use ld_hld_a;
-pub(crate) use ld_hli_a;
-pub(crate) use ld_nn_a;
-pub(crate) use ld_nn_sp;
-pub(crate) use ld_r_hl;
-pub(crate) use ld_r_r;
-pub(crate) use ld_rr_nn;
-pub(crate) use ld_sp_hl;
-pub(crate) use pop_rr;
-pub(crate) use push_rr;
+pub use add_hl_rr;
+pub use dec_rr;
+pub use inc_rr;
+pub use ld_a16_a;
+pub use ld_a_a16;
+pub use ld_a_bc;
+pub use ld_a_c;
+pub use ld_a_de;
+pub use ld_a_ff00_n;
+pub use ld_a_hld;
+pub use ld_a_hli;
+pub use ld_a_nn;
+pub use ld_bc_a;
+pub use ld_c_a;
+pub use ld_de_a;
+pub use ld_ff00_n_a;
+pub use ld_hl_r;
+pub use ld_hl_sp_e;
+pub use ld_hld_a;
+pub use ld_hli_a;
+pub use ld_nn_a;
+pub use ld_nn_sp;
+pub use ld_r_hl;
+pub use ld_r_r;
+pub use ld_rr_nn;
+pub use ld_sp_hl;
+pub use pop_rr;
+pub use push_rr;

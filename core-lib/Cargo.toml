@@ -1,40 +1,38 @@
 [package]
 name         = "core-lib"
 version      = "0.1.0"
-edition      = "2021"
 description  = "Core Game Boy and Game Boy Color emulation logic"
-license      = { workspace = true }
-rust-version = { workspace = true }
+edition      = "2021"
+homepage     = "https://github.com/sm-moshi/gboxide"
+repository   = "https://github.com/sm-moshi/gboxide"
+license      = "MIT OR Apache-2.0"
+rust-version = "1.78.0"
 
 [dependencies]
-common = { path = "../common" }
-
-# Use workspace dependencies where possible
-bitflags = { workspace = true }
-# bitfield           = { workspace = true }
+bitflags           = { workspace = true }
 thiserror          = { workspace = true }
 log                = { workspace = true }
 anyhow             = { workspace = true }
 tracing            = { workspace = true, features = ["attributes"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-proptest           = "1.6.0"
-test-case          = "3.3.1"
-insta              = { workspace = true, features = ["yaml", "serde", "redactions"] }
+proptest           = { workspace = true }
+test-case          = { workspace = true }
+insta              = { workspace = true }
 
-# Direct dependencies
-once_cell         = "1.21.3"
-pastey            = "0.1.0"
+once_cell         = { workspace = true }
+pastey            = { workspace = true }
 pretty_assertions = { workspace = true, optional = true }
 
 [dev-dependencies]
+proptest          = { workspace = true }
+test-case         = { workspace = true }
+insta             = { workspace = true }
 pretty_assertions = { workspace = true }
 
 [features]
 default = ["cgb"]
-# Hardware variants
-cgb = [] # Game Boy Color support
-dmg = [] # Original Game Boy support
-# Optional features
+cgb     = []                        # Game Boy Color support
+dmg     = []                        # Original Game Boy support
 debug   = []                        # Enable debug logging and assertions
 testing = ["dep:pretty_assertions"] # Enable test-specific functionality
 

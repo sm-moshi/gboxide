@@ -1,4 +1,3 @@
-/// core-lib/src/ppu/color.rs
 /// Represents a color in the Game Boy's screen using the DMG (original Game Boy) color palette
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
