@@ -19,6 +19,8 @@ jobs:
             - uses: Swatinem/rust-cache@v2
             - name: Check (wasm32-unknown-unknown)
               run: cargo check --target wasm32-unknown-unknown --all-features --locked
+            - name: Install Clippy
+              run: rustup component add clippy
             - name: Clippy (wasm32-unknown-unknown)
               run: cargo clippy --target wasm32-unknown-unknown --all-features
             - name: Fmt

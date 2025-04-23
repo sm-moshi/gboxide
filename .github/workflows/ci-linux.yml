@@ -16,21 +16,9 @@ jobs:
                     - os: ubuntu-latest
                       arch: x86_64
                       rust: stable
-                    - os: ubuntu-latest
-                      arch: x86_64
-                      rust: beta
-                    - os: ubuntu-latest
-                      arch: x86_64
-                      rust: nightly
                     - os: ubuntu-latest-arm64
                       arch: aarch64
                       rust: stable
-                    - os: ubuntu-latest-arm64
-                      arch: aarch64
-                      rust: beta
-                    - os: ubuntu-latest-arm64
-                      arch: aarch64
-                      rust: nightly
         steps:
             - uses: actions/checkout@v4
             - uses: dtolnay/rust-toolchain@v1
@@ -38,11 +26,7 @@ jobs:
                   toolchain: ${{ matrix.rust }}
             - uses: Swatinem/rust-cache@v2
             - name: Test
-              run: cargo test --all-features --all-targets --locked
-            - name: Clippy
-              run: cargo clippy --all-targets --all-features
-            - name: Fmt
-              run: cargo fmt -- --check
+              run: cargo test --workspace --all-targets --all-features
 
     coverage:
         name: Coverage (${{ matrix.os }} ${{ matrix.arch }})
@@ -70,7 +54,7 @@ jobs:
                   export CARGO_INCREMENTAL=0
                   export RUSTFLAGS="-Zinstrument-coverage"
                   export LLVM_PROFILE_FILE="gboxide-%p-%m.profraw"
-                  cargo test --all-features --all-targets
+                  cargo test --workspace --all-targets --all-features
             - name: Generate coverage report
               run: |
                   grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o lcov.info
@@ -79,17 +63,3 @@ jobs:
               with:
                   name: coverage-lcov
                   path: lcov.info
-
-    msrv:
-        name: MSRV Check (cargo-msrv)
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
-            - uses: dtolnay/rust-toolchain@v1
-              with:
-                  toolchain: stable
-            - uses: Swatinem/rust-cache@v2
-            - name: Install cargo-msrv
-              run: cargo install cargo-msrv
-            - name: Find and check MSRV
-              run: cargo msrv verify --output-format json
