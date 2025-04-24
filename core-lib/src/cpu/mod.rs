@@ -167,7 +167,7 @@ impl CPU {
         }
     }
 
-    pub fn step(&mut self, bus: &mut dyn MemoryBusTrait) -> u32 {
+    pub fn step(&mut self, bus: &mut dyn MemoryBusTrait) -> anyhow::Result<u32> {
         static STEP_COUNT: AtomicUsize = AtomicUsize::new(0);
         let step = STEP_COUNT.fetch_add(1, Ordering::Relaxed);
 
@@ -184,13 +184,13 @@ impl CPU {
                 self.regs.pc = bus.get_interrupt_vector(interrupt);
                 self.current_cycles = 20;
                 self.cycles += u64::from(self.current_cycles);
-                return self.current_cycles;
+                return Ok(self.current_cycles);
             }
         }
         if self.halted {
             self.current_cycles = 4;
             self.cycles += u64::from(self.current_cycles);
-            return self.current_cycles;
+            return Ok(self.current_cycles);
         }
         let opcode = bus.read(self.regs.pc);
         self.regs.pc = self.regs.pc.wrapping_add(1);
@@ -218,7 +218,7 @@ impl CPU {
             );
             &opcodes::OPCODES[opcode as usize]
         };
-        let condition_met = (op.exec)(self, bus);
+        let condition_met = (op.exec)(self, bus)?;
         self.current_cycles = op.base_cycles;
         if condition_met {
             self.current_cycles += op.conditional_cycles;
@@ -253,7 +253,7 @@ impl CPU {
             interrupts.borrow_mut().update_ime();
         }
         self.cycles += u64::from(self.current_cycles);
-        self.current_cycles
+        Ok(self.current_cycles)
     }
 
     pub const fn get_cycles(&self) -> u64 {
@@ -264,7 +264,7 @@ impl CPU {
         self.current_cycles
     }
 
-    pub fn execute(&mut self, opcode: u8, bus: &mut dyn MemoryBusTrait) -> bool {
+    pub fn execute(&mut self, opcode: u8, bus: &mut dyn MemoryBusTrait) -> anyhow::Result<bool> {
         (opcodes::OPCODES[opcode as usize].exec)(self, bus)
     }
 }

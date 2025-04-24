@@ -8,13 +8,19 @@ homepage    = "https://github.com/sm-moshi/gboxide"
 repository  = "https://github.com/sm-moshi/gboxide"
 
 [dependencies]
-core-lib = { path = "../core-lib", version = "0.1.0" }
+anyhow = { workspace = true }
 
-clap    = { workspace = true }
-tracing = { workspace = true }
-winit   = { workspace = true }
-anyhow  = { workspace = true }
+clap     = { workspace = true }
+core-lib = { path = "../core-lib", version = "0.1.0" }
+winit    = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = { workspace = true }
-predicates = { workspace = true }
+assert_cmd        = { workspace = true }
+predicates        = { workspace = true }
+tempfile          = { workspace = true }
+test-case         = { workspace = true }
+pretty_assertions = { workspace = true }
+
+
+[lints]
+workspace = true

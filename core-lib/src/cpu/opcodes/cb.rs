@@ -5,6 +5,7 @@
 //! Keeping CB-prefixed logic separate improves clarity and maintainability.
 
 use super::types::Opcode;
+use anyhow;
 use once_cell::sync::Lazy;
 
 // The CB-prefixed opcode table is constructed here.
@@ -13,7 +14,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         mnemonic: "UNUSED",
         base_cycles: 0,
         conditional_cycles: 0,
-        exec: Box::new(|_, _| panic!("Unimplemented CB opcode")),
+        exec: Box::new(|_, _| Err(anyhow::anyhow!("Unimplemented CB opcode"))),
     });
 
     // Ported from legacy: generate_cb_ops! macro and CB opcode logic
@@ -43,7 +44,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.set_reg(reg, res);
                 }
-                false
+                Ok(false)
             }),
         };
     }
@@ -72,7 +73,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.set_reg(reg, res);
                 }
-                false
+                Ok(false)
             }),
         };
     }
@@ -102,7 +103,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.set_reg(reg, res);
                 }
-                false
+                Ok(false)
             }),
         };
     }
@@ -132,7 +133,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.set_reg(reg, res);
                 }
-                false
+                Ok(false)
             }),
         };
     }
@@ -161,7 +162,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.set_reg(reg, res);
                 }
-                false
+                Ok(false)
             }),
         };
     }
@@ -190,7 +191,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.set_reg(reg, res);
                 }
-                false
+                Ok(false)
             }),
         };
     }
@@ -216,7 +217,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.set_reg(reg, res);
                 }
-                false
+                Ok(false)
             }),
         };
     }
@@ -245,7 +246,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 } else {
                     cpu.regs.set_reg(reg, res);
                 }
-                false
+                Ok(false)
             }),
         };
     }
@@ -270,7 +271,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                         f |= 0x80;
                     } // Z
                     cpu.regs.f = f;
-                    false
+                    Ok(false)
                 }),
             };
             // RES
@@ -290,7 +291,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                     } else {
                         cpu.regs.set_reg(reg, res);
                     }
-                    false
+                    Ok(false)
                 }),
             };
             // SET
@@ -310,7 +311,7 @@ pub static CB_OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                     } else {
                         cpu.regs.set_reg(reg, res);
                     }
-                    false
+                    Ok(false)
                 }),
             };
         }

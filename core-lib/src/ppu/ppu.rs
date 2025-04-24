@@ -2,12 +2,16 @@ use crate::helpers::{extract_colour_index, tile_data_address, unpack_tile_attrib
 use crate::interrupts::InterruptFlag;
 
 use super::color::Color;
+use super::helpers::{
+    cgb_bg_color, collect_visible_sprites, get_bg_priority, set_bg_priority, sprite_pixel_for_x,
+};
 use super::lcdc::LcdControl;
 use super::stat::LcdStatus;
+use super::VRAM_BANK_SIZE;
 use super::{PpuError, PpuMode, SCREEN_HEIGHT, SCREEN_WIDTH};
 use super::{
-    BGP_ADDR, LCDC_ADDR, LYC_ADDR, LY_ADDR, MAX_SPRITES_PER_LINE, OAM_SIZE, OBP0_ADDR, OBP1_ADDR,
-    SCX_ADDR, SCY_ADDR, STAT_ADDR, VRAM_SIZE, WX_ADDR, WY_ADDR,
+    BGP_ADDR, LCDC_ADDR, LYC_ADDR, LY_ADDR, OAM_SIZE, OBP0_ADDR, OBP1_ADDR, SCX_ADDR, SCY_ADDR,
+    STAT_ADDR, VRAM_SIZE, WX_ADDR, WY_ADDR,
 };
 
 /// Sprite attributes structure (OAM entry)
@@ -115,6 +119,8 @@ pub struct Ppu {
     pub frame_ready: bool, // Flag indicating a new frame is ready
 
     pub is_cgb: bool, // True if running in CGB mode
+    // Per-pixel BG priority buffer for CGB (bitfield, 1 bit per pixel)
+    bg_priority_buffer: Box<[u8]>,
 }
 
 impl Default for Ppu {
@@ -144,6 +150,8 @@ impl Default for Ppu {
             obp_index: 0,
             obp_data: [0; 64],
             is_cgb: false,
+            bg_priority_buffer: vec![0; (SCREEN_WIDTH * SCREEN_HEIGHT).div_ceil(8)]
+                .into_boxed_slice(),
         }
     }
 }
@@ -201,36 +209,9 @@ impl Ppu {
         self.window_line = 0;
     }
 
-    /// Helper: Lookup CGB BG palette colour (stub, assumes palette 0)
-    fn cgb_bg_color(&self, color_idx: u8, palette_num: u8) -> Color {
-        // Each palette is 8 bytes (4 colours, 2 bytes each, little endian)
-        let base = (palette_num as usize) * 8 + (color_idx as usize) * 2;
-        let lo = self.bgp_data.get(base).copied().unwrap_or(0);
-        let hi = self.bgp_data.get(base + 1).copied().unwrap_or(0);
-        let rgb15 = (u16::from(hi) << 8) | u16::from(lo);
-        // Convert 15-bit BGR to 24-bit RGB
-        let r = u8::try_from((rgb15 & 0x1F) << 3).unwrap_or(0);
-        let g = u8::try_from(((rgb15 >> 5) & 0x1F) << 3).unwrap_or(0);
-        let b = u8::try_from(((rgb15 >> 10) & 0x1F) << 3).unwrap_or(0);
-        Color { r, g, b, a: 0xFF }
-    }
-
-    /// Helper: Lookup CGB OBJ palette colour (stub, assumes palette 0)
-    fn cgb_obj_color(&self, color_idx: u8, palette_num: u8) -> Color {
-        // Each palette is 8 bytes (4 colours, 2 bytes each, little endian)
-        let base = (palette_num as usize) * 8 + (color_idx as usize) * 2;
-        let lo = self.obp_data.get(base).copied().unwrap_or(0);
-        let hi = self.obp_data.get(base + 1).copied().unwrap_or(0);
-        let rgb15 = (u16::from(hi) << 8) | u16::from(lo);
-        let r = u8::try_from((rgb15 & 0x1F) << 3).unwrap_or(0);
-        let g = u8::try_from(((rgb15 >> 5) & 0x1F) << 3).unwrap_or(0);
-        let b = u8::try_from(((rgb15 >> 10) & 0x1F) << 3).unwrap_or(0);
-        Color { r, g, b, a: 0xFF }
-    }
-
     /// Render the window for the current scanline
     ///
-    /// Note: The `_priority` variable is extracted for future CGB compatibility and to document the attribute layout, but is currently unused. Prefixing with underscore silences warnings. 🦀
+    /// Note: The `_priority` variable is extracted for future CGB compatibility and to document the attribute layout, but is currently unused. Prefixing with underscore silences warnings.
     #[allow(clippy::branches_sharing_code)]
     fn render_window(&mut self) {
         // Check if window is visible on this scanline
@@ -280,7 +261,7 @@ impl Ppu {
 
             // CGB: Read tile attributes for palette, bank, flipping, priority
             #[allow(clippy::used_underscore_binding)]
-            let (palette_num, vram_bank, x_flip, y_flip, _priority) = if self.is_cgb {
+            let (palette_num, vram_bank, x_flip, y_flip, priority) = if self.is_cgb {
                 let attr = self
                     .vram
                     .get(tile_map_addr as usize + 0x2000)
@@ -321,11 +302,15 @@ impl Ppu {
             let color_idx = extract_colour_index(tile_data_low, tile_data_high, bit);
 
             let color = if self.is_cgb {
-                self.cgb_bg_color(color_idx, palette_num)
+                cgb_bg_color(color_idx, palette_num, &self.bgp_data)
             } else {
                 Color::from_palette(color_idx, self.bgp)
             };
             self.frame_buffer[scanline_offset + x] = color;
+            // Track BG priority bit for this pixel (CGB only, now as bitfield)
+            if self.is_cgb {
+                set_bg_priority(&mut self.bg_priority_buffer, scanline_offset + x, priority);
+            }
         }
 
         // Increment internal window line counter
@@ -498,7 +483,7 @@ impl Ppu {
 
             // CGB: Read tile attributes for palette, bank, flipping, priority
             #[allow(clippy::used_underscore_binding)]
-            let (palette_num, vram_bank, x_flip, y_flip, _priority) = if self.is_cgb {
+            let (palette_num, vram_bank, x_flip, y_flip, priority) = if self.is_cgb {
                 // Attribute map is at 0x2000 offset in VRAM
                 let attr = self
                     .vram
@@ -540,11 +525,15 @@ impl Ppu {
             let color_idx = extract_colour_index(tile_data_low, tile_data_high, bit);
 
             let color = if self.is_cgb {
-                self.cgb_bg_color(color_idx, palette_num)
+                cgb_bg_color(color_idx, palette_num, &self.bgp_data)
             } else {
                 Color::from_palette(color_idx, self.bgp)
             };
             self.frame_buffer[scanline_offset + x] = color;
+            // Track BG priority bit for this pixel (CGB only, now as bitfield)
+            if self.is_cgb {
+                set_bg_priority(&mut self.bg_priority_buffer, scanline_offset + x, priority);
+            }
         }
     }
 
@@ -560,107 +549,34 @@ impl Ppu {
             8
         };
 
-        // Collect visible sprites for this scanline
-        let mut visible_sprites = Vec::with_capacity(MAX_SPRITES_PER_LINE);
-        for i in (0..OAM_SIZE).step_by(4) {
-            let sprite = Sprite::from_oam(&self.oam, i / 4);
-            let y_pos = sprite.y_position();
-
-            // Check if sprite is visible on this scanline
-            if y_pos <= i32::from(self.ly)
-                && (y_pos + i32::from(sprite_height)) > i32::from(self.ly)
+        let visible_sprites = collect_visible_sprites(self, sprite_height);
+        for x in 0..SCREEN_WIDTH {
+            if let Some((_, _color_idx, color, dmg_priority, cgb_priority)) =
+                sprite_pixel_for_x(x, self.ly, sprite_height, &visible_sprites, self)
             {
-                visible_sprites.push(sprite);
-                if visible_sprites.len() >= MAX_SPRITES_PER_LINE {
-                    break;
-                }
-            }
-        }
-
-        // Sort sprites by priority (lower X coordinate has priority, if equal, lower OAM index has priority)
-        visible_sprites.sort_by_key(|sprite| sprite.x_pos);
-
-        // Render sprites in priority order
-        for sprite in visible_sprites.iter().rev() {
-            let y_pos = sprite.y_position();
-            let x_pos = sprite.x_position();
-
-            // CGB: Read OAM attribute for palette, bank, flipping, priority
-            #[allow(clippy::used_underscore_binding)]
-            let (palette_num, vram_bank, x_flip, y_flip, _priority) = if self.is_cgb {
-                unpack_tile_attributes(sprite.attributes)
-            } else {
-                (
-                    0,
-                    0,
-                    sprite.is_x_flipped(),
-                    sprite.is_y_flipped(),
-                    !sprite.has_priority(),
-                )
-            };
-
-            // Calculate which line of the sprite we're drawing
-            let mut line = u8::try_from(i32::from(self.ly) - y_pos).unwrap_or(0);
-            if y_flip {
-                line = (sprite_height - 1) - line;
-            }
-
-            // Get the tile data
-            let tile_addr = if sprite_height == 16 {
-                // In 8x16 mode, bit 0 of tile index is ignored
-                (u16::from(sprite.tile_idx & 0xFE) * 16) + u16::from(line & 0xF) * 2
-            } else {
-                u16::from(sprite.tile_idx) * 16 + u16::from(line) * 2
-            };
-
-            // CGB: Use correct VRAM bank for tile data
-            let vram_offset = if self.is_cgb && vram_bank == 1 {
-                0x2000
-            } else {
-                0
-            };
-
-            let low_byte = self.vram[vram_offset + tile_addr as usize];
-            let high_byte = self.vram[vram_offset + (tile_addr + 1) as usize];
-
-            // Draw each pixel of the sprite line
-            for x in 0..8 {
-                let screen_x = x_pos + x;
-                if screen_x < 0 || screen_x >= i32::try_from(SCREEN_WIDTH).unwrap_or(0) {
-                    continue;
-                }
-
-                let bit = u8::try_from(if x_flip { x } else { 7 - x }).unwrap_or(0);
-                let color_idx = extract_colour_index(low_byte, high_byte, bit);
-
-                // Skip transparent pixels (color 0)
-                if color_idx == 0 {
-                    continue;
-                }
-
-                let color = if self.is_cgb {
-                    self.cgb_obj_color(color_idx, palette_num)
+                let pixel_index = self.ly as usize * SCREEN_WIDTH + x;
+                let bg_color = self.frame_buffer[pixel_index];
+                let bg_is_white = bg_color == Color::WHITE;
+                let bg_priority = if self.is_cgb {
+                    get_bg_priority(&self.bg_priority_buffer, pixel_index)
                 } else {
-                    let palette = if sprite.palette() == 0 {
-                        self.obp0
-                    } else {
-                        self.obp1
-                    };
-                    Color::from_palette(color_idx, palette)
+                    false
                 };
-                let pixel_index =
-                    self.ly as usize * SCREEN_WIDTH + usize::try_from(screen_x).unwrap_or(0);
-
-                // Check sprite priority
-                if (self.is_cgb && _priority) || (!self.is_cgb && !sprite.has_priority()) {
-                    // Only draw if background is white (color 0)
-                    let bg_color = self.frame_buffer[pixel_index];
-                    if bg_color == Color::WHITE {
+                if self.is_cgb {
+                    // CGB: If BG priority bit is set, sprite is behind BG unless BG color is 0
+                    // See Pandocs: https://gbdev.io/pandocs/Tile_Maps.html#bg-attribute-map
+                    if bg_priority {
+                        if bg_is_white {
+                            self.frame_buffer[pixel_index] = color;
+                        }
+                    } else if !cgb_priority || bg_is_white {
                         self.frame_buffer[pixel_index] = color;
                     }
                 } else {
-                    // Always draw sprite
-                    self.frame_buffer[pixel_index] = color;
+                    // DMG: If priority is set, sprite is behind BG unless BG color is 0
+                    if !dmg_priority || bg_is_white {
+                        self.frame_buffer[pixel_index] = color;
+                    }
                 }
             }
         }
@@ -678,7 +594,9 @@ impl Ppu {
                 if self.mode == PpuMode::PixelTransfer {
                     return Err(PpuError::VramLocked);
                 }
-                Ok(self.vram[(addr - 0x8000) as usize])
+                let bank = if self.is_cgb { self.vram_bank & 0x1 } else { 0 };
+                let offset = (bank as usize) * VRAM_BANK_SIZE + (addr as usize - 0x8000);
+                Ok(self.vram[offset])
             }
 
             // OAM (0xFE00-0xFE9F)
@@ -734,7 +652,9 @@ impl Ppu {
                 if self.mode == PpuMode::PixelTransfer {
                     return Err(PpuError::VramLocked);
                 }
-                self.vram[(addr - 0x8000) as usize] = value;
+                let bank = if self.is_cgb { self.vram_bank & 0x1 } else { 0 };
+                let offset = (bank as usize) * VRAM_BANK_SIZE + (addr as usize - 0x8000);
+                self.vram[offset] = value;
                 Ok(())
             }
 

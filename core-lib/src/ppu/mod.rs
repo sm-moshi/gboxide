@@ -7,6 +7,8 @@ pub use ppu::Ppu;
 pub mod color;
 pub use color::Color;
 
+pub mod helpers;
+
 /// PPU-related errors
 #[derive(Debug, Error)]
 pub enum PpuError {
@@ -88,7 +90,10 @@ impl PpuMode {
 // Hardware constants
 pub const SCREEN_WIDTH: usize = 160;
 pub const SCREEN_HEIGHT: usize = 144;
-pub const VRAM_SIZE: usize = 0x2000; // 8KB
+/// VRAM size: 16KB (2 banks of 8KB each, CGB)
+pub const VRAM_SIZE: usize = 0x4000; // 16KB
+/// VRAM bank size: 8KB (DMG or single CGB bank)
+pub const VRAM_BANK_SIZE: usize = 0x2000; // 8KB
 pub const OAM_SIZE: usize = 0xA0; // 160 bytes (40 sprites × 4 bytes)
 pub const MAX_SPRITES_PER_LINE: usize = 10;
 

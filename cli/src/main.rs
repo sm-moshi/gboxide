@@ -3,6 +3,13 @@
 /// Provides subcommands for running and testing Game Boy ROMs.
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use core_lib::{cpu::CPU, mmu::MMU};
+use std::process;
+use winit::application::ApplicationHandler;
+use winit::event::{ElementState, WindowEvent};
+use winit::event_loop::EventLoop;
+use winit::keyboard::{Key, NamedKey};
+use winit::window::{Window, WindowAttributes, WindowId};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -44,55 +51,113 @@ enum Commands {
     },
 }
 
-fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    // Set up logging or debugging as needed
-    if cli.debug {
-        // In a real app, set up debug logging here
-        eprintln!("[DEBUG] Debug mode enabled");
-    }
-    if cli.verbose {
-        // In a real app, set up verbose logging here
-        eprintln!("[VERBOSE] Verbose mode enabled");
-    }
-    match &cli.command {
-        Commands::Run { rom_path, headless } => {
-            if *headless {
-                let exit_code = run_test_rom(rom_path, cli.debug, cli.verbose)?;
-                std::process::exit(exit_code);
-            } else {
-                run_rom(rom_path, false, cli.debug, cli.verbose)?;
-            }
-        }
-        Commands::Test { rom_path } => {
-            let exit_code = run_test_rom(rom_path, cli.debug, cli.verbose)?;
-            std::process::exit(exit_code);
-        }
-    }
-    Ok(())
+struct EmulatorApp {
+    window: Option<Window>,
+    mmu: MMU,
+    cpu: CPU,
+    debug: bool,
+    _verbose: bool,
+    should_exit: bool,
 }
 
-/// Launches the emulator with the given ROM path and options.
-///
-/// # Arguments
-/// * `rom_path` - Path to the ROM file to load
-/// * `headless` - If true, run without a window (for CI/test automation)
-/// * `debug` - If true, enable debug output (from global flag)
-/// * `verbose` - If true, enable verbose output (from global flag)
+impl EmulatorApp {
+    fn map_key(key: &Key) -> Option<core_lib::mmu::GameBoyButton> {
+        match key {
+            Key::Named(NamedKey::ArrowUp) => Some(core_lib::mmu::GameBoyButton::Up),
+            Key::Named(NamedKey::ArrowDown) => Some(core_lib::mmu::GameBoyButton::Down),
+            Key::Named(NamedKey::ArrowLeft) => Some(core_lib::mmu::GameBoyButton::Left),
+            Key::Named(NamedKey::ArrowRight) => Some(core_lib::mmu::GameBoyButton::Right),
+            Key::Character(s) if s.eq_ignore_ascii_case("z") => {
+                Some(core_lib::mmu::GameBoyButton::A)
+            }
+            Key::Character(s) if s.eq_ignore_ascii_case("x") => {
+                Some(core_lib::mmu::GameBoyButton::B)
+            }
+            Key::Named(NamedKey::Enter) => Some(core_lib::mmu::GameBoyButton::Start),
+            Key::Named(NamedKey::Shift) => Some(core_lib::mmu::GameBoyButton::Select),
+            _ => None,
+        }
+    }
+}
+
+impl ApplicationHandler for EmulatorApp {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.window.is_none() {
+            let window = match event_loop.create_window(WindowAttributes::default()) {
+                Ok(w) => w,
+                Err(e) => panic!("Failed to create window: {e}"),
+            };
+            self.window = Some(window);
+        }
+    }
+    fn window_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        match event {
+            WindowEvent::CloseRequested => {
+                self.should_exit = true;
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let Some(button) = Self::map_key(&event.logical_key) {
+                    let pressed = event.state == ElementState::Pressed;
+                    self.mmu.update_joypad(button, pressed);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        for _ in 0..1000 {
+            if self.should_exit {
+                return;
+            }
+            let opcode = self.mmu.read(self.cpu.regs.pc);
+            if opcode == 0x76 {
+                self.should_exit = true;
+                return;
+            }
+            match self.cpu.step(&mut self.mmu) {
+                Ok(cycles) => self.mmu.step(cycles),
+                Err(e) => {
+                    eprintln!("[ERROR] CPU step failed: {e}");
+                    self.should_exit = true;
+                    return;
+                }
+            }
+            if self.debug {
+                // Print debug info (placeholder)
+                eprintln!("PC: {:04X}", self.cpu.regs.pc);
+            }
+        }
+    }
+}
+
+fn run_rom_headless(mut mmu: MMU, mut cpu: CPU) {
+    for _ in 0..10_000 {
+        let opcode = mmu.read(cpu.regs.pc);
+        if opcode == 0x76 {
+            // HALT instruction: exit
+            return;
+        }
+        match cpu.step(&mut mmu) {
+            Ok(cycles) => mmu.step(cycles),
+            Err(e) => {
+                eprintln!("[ERROR] CPU step failed: {e}");
+                return;
+            }
+        }
+    }
+}
+
 fn run_rom(
     rom_path: &std::path::Path,
     headless: bool,
     debug: bool,
     verbose: bool,
 ) -> anyhow::Result<()> {
-    use core_lib::{cpu::CPU, mmu::MMU};
-    use std::process;
-    use winit::application::ApplicationHandler;
-    use winit::event::{ElementState, WindowEvent};
-    use winit::event_loop::EventLoop;
-    use winit::keyboard::{Key, NamedKey};
-    use winit::window::{Window, WindowAttributes, WindowId};
-
     // Validate ROM path
     if !rom_path.exists() {
         anyhow::bail!("ROM file not found: {}", rom_path.display());
@@ -100,99 +165,12 @@ fn run_rom(
     let rom_data = std::fs::read(rom_path)
         .with_context(|| format!("Failed to read ROM from {}", rom_path.display()))?;
 
-    let mut mmu = MMU::new(rom_data)?;
-    let mut cpu = CPU::new();
-
-    // Example: Write a simple test program (NOP, NOP, HALT)
-    // This is placeholder logic; real ROMs will have their own entrypoint.
-    // let _ = mmu.write(0x0100, 0x00); // NOP
-    // let _ = mmu.write(0x0101, 0x00); // NOP
-    // let _ = mmu.write(0x0102, 0x76); // HALT
+    let mmu = MMU::new(rom_data)?;
+    let cpu = CPU::new();
 
     if headless {
-        // Headless mode: run until HALT or for a fixed number of cycles
-        for _ in 0..10_000 {
-            let opcode = mmu.read(cpu.regs.pc);
-            if opcode == 0x76 {
-                // HALT instruction: exit
-                return Ok(());
-            }
-            let cycles = cpu.step(&mut mmu);
-            mmu.step(cycles);
-        }
+        run_rom_headless(mmu, cpu);
         return Ok(());
-    }
-
-    struct EmulatorApp {
-        window: Option<Window>,
-        mmu: MMU,
-        cpu: CPU,
-        debug: bool,
-        _verbose: bool,
-    }
-
-    impl EmulatorApp {
-        fn map_key(key: &Key) -> Option<core_lib::mmu::GameBoyButton> {
-            match key {
-                Key::Named(NamedKey::ArrowUp) => Some(core_lib::mmu::GameBoyButton::Up),
-                Key::Named(NamedKey::ArrowDown) => Some(core_lib::mmu::GameBoyButton::Down),
-                Key::Named(NamedKey::ArrowLeft) => Some(core_lib::mmu::GameBoyButton::Left),
-                Key::Named(NamedKey::ArrowRight) => Some(core_lib::mmu::GameBoyButton::Right),
-                Key::Character(s) if s.eq_ignore_ascii_case("z") => {
-                    Some(core_lib::mmu::GameBoyButton::A)
-                }
-                Key::Character(s) if s.eq_ignore_ascii_case("x") => {
-                    Some(core_lib::mmu::GameBoyButton::B)
-                }
-                Key::Named(NamedKey::Enter) => Some(core_lib::mmu::GameBoyButton::Start),
-                Key::Named(NamedKey::Shift) => Some(core_lib::mmu::GameBoyButton::Select),
-                _ => None,
-            }
-        }
-    }
-
-    impl ApplicationHandler for EmulatorApp {
-        fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-            if self.window.is_none() {
-                let window = event_loop
-                    .create_window(WindowAttributes::default())
-                    .expect("Failed to create window");
-                self.window = Some(window);
-            }
-        }
-        fn window_event(
-            &mut self,
-            _event_loop: &winit::event_loop::ActiveEventLoop,
-            _window_id: WindowId,
-            event: WindowEvent,
-        ) {
-            match event {
-                WindowEvent::CloseRequested => {
-                    process::exit(0);
-                }
-                WindowEvent::KeyboardInput { event, .. } => {
-                    if let Some(button) = Self::map_key(&event.logical_key) {
-                        let pressed = event.state == ElementState::Pressed;
-                        self.mmu.update_joypad(button, pressed);
-                    }
-                }
-                _ => {}
-            }
-        }
-        fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-            for _ in 0..1000 {
-                let opcode = self.mmu.read(self.cpu.regs.pc);
-                if opcode == 0x76 {
-                    process::exit(0);
-                }
-                let cycles = self.cpu.step(&mut self.mmu);
-                self.mmu.step(cycles);
-                if self.debug {
-                    // Print debug info (placeholder)
-                    eprintln!("PC: {:04X}", self.cpu.regs.pc);
-                }
-            }
-        }
     }
 
     let event_loop = EventLoop::new()?;
@@ -202,6 +180,7 @@ fn run_rom(
         cpu,
         debug,
         _verbose: verbose,
+        should_exit: false,
     };
     let _ = event_loop.run_app(&mut app);
     Ok(())
@@ -211,6 +190,7 @@ fn run_rom(
 /// Returns exit code: 0 for pass, 1 for fail/timeout.
 fn run_test_rom(rom_path: &std::path::Path, debug: bool, _verbose: bool) -> anyhow::Result<i32> {
     use core_lib::{cpu::CPU, mmu::MMU};
+    use std::io::Write;
     const MAX_CYCLES: u64 = 10_000_000;
     const SERIAL_DATA: u16 = 0xFF01;
     const SERIAL_CTRL: u16 = 0xFF02;
@@ -221,7 +201,7 @@ fn run_test_rom(rom_path: &std::path::Path, debug: bool, _verbose: bool) -> anyh
     let rom_data = std::fs::read(rom_path)
         .with_context(|| format!("Failed to read ROM from {}", rom_path.display()))?;
 
-    let mut mmu = MMU::new(rom_data)?;
+    let mut mmu = MMU::new(rom_data).map_err(anyhow::Error::from)?;
     let mut cpu = CPU::new();
     cpu.regs.pc = 0x0100;
     let mut serial_output = Vec::new();
@@ -246,8 +226,16 @@ fn run_test_rom(rom_path: &std::path::Path, debug: bool, _verbose: bool) -> anyh
             break;
         }
         let step_cycles = cpu.step(&mut mmu);
-        mmu.step(step_cycles);
-        cycles += u64::from(step_cycles);
+        match step_cycles {
+            Ok(cycles_val) => {
+                mmu.step(cycles_val);
+                cycles += u64::from(cycles_val);
+            }
+            Err(e) => {
+                eprintln!("[ERROR] CPU step failed: {e}");
+                break;
+            }
+        }
         step_count += 1;
 
         // Serial transfer: if 0xFF02 == 0x81, output 0xFF01
@@ -262,7 +250,6 @@ fn run_test_rom(rom_path: &std::path::Path, debug: bool, _verbose: bool) -> anyh
             }
             // Print as soon as received
             print!("{}", byte as char);
-            use std::io::Write;
             std::io::stdout().flush().ok();
             // Clear transfer flag
             let _ = mmu.write(SERIAL_CTRL, 0x00);
@@ -277,26 +264,48 @@ fn run_test_rom(rom_path: &std::path::Path, debug: bool, _verbose: bool) -> anyh
             break;
         }
     }
-    if debug {
-        eprintln!(
-            "[DEBUG] Serial output: {}",
-            String::from_utf8_lossy(&serial_output)
-        );
-        eprintln!("[DEBUG] Cycles executed: {}", cycles);
+    eprintln!("[DEBUG] Cycles executed: {cycles}");
+    Ok(i32::from(!pass))
+}
+
+fn main() {
+    let exit_code = match real_main() {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("error: {e}");
+            1
+        }
+    };
+    std::process::exit(exit_code);
+}
+
+fn real_main() -> anyhow::Result<i32> {
+    let cli = Cli::parse();
+    // Set up logging or debugging as needed
+    if cli.debug {
+        // In a real app, set up debug logging here
+        eprintln!("[DEBUG] Debug mode enabled");
     }
-    if !pass {
-        eprintln!("[ERROR] Test did not pass (timeout or failure)");
+    if cli.verbose {
+        // In a real app, set up verbose logging here
+        eprintln!("[VERBOSE] Verbose mode enabled");
     }
-    Ok(if pass { 0 } else { 1 })
+    match &cli.command {
+        Commands::Run { rom_path, headless } => {
+            if *headless {
+                let exit_code = run_test_rom(rom_path, cli.debug, cli.verbose)?;
+                Ok(exit_code)
+            } else {
+                run_rom(rom_path, false, cli.debug, cli.verbose)?;
+                Ok(0)
+            }
+        }
+        Commands::Test { rom_path } => {
+            let exit_code = run_test_rom(rom_path, cli.debug, cli.verbose)?;
+            Ok(exit_code)
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use clap::CommandFactory;
-
-    #[test]
-    fn verify_cli() {
-        Cli::command().debug_assert();
-    }
-}
+mod tests;

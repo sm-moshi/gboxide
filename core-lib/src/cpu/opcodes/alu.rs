@@ -25,7 +25,7 @@ macro_rules! alu_add {
                     | (((lhs & 0xF) + (rhs & 0xF)) > 0xF).then_some(0x20).unwrap_or(0) // H
                     | (result < lhs).then_some(0x10).unwrap_or(0); // C
                 cpu.regs.a = result;
-                false
+                Ok(false)
             }),
         };
     };
@@ -47,7 +47,7 @@ macro_rules! alu_sub {
                     | ((lhs & 0xF) < (rhs & 0xF)).then_some(0x20).unwrap_or(0) // H
                     | (rhs > lhs).then_some(0x10).unwrap_or(0); // C
                 cpu.regs.a = result;
-                false
+                Ok(false)
             }),
         };
     };
@@ -64,7 +64,7 @@ macro_rules! alu_and {
                 cpu.regs.a &= cpu.regs.$reg;
                 cpu.regs.f = 0x20 // H
                     | (cpu.regs.a == 0).then_some(0x80).unwrap_or(0); // Z
-                false
+                Ok(false)
             }),
         };
     };
@@ -80,7 +80,7 @@ macro_rules! alu_xor {
             exec: Box::new(|cpu, _| {
                 cpu.regs.a ^= cpu.regs.$reg;
                 cpu.regs.f = (cpu.regs.a == 0).then_some(0x80).unwrap_or(0); // Z
-                false
+                Ok(false)
             }),
         };
     };
@@ -96,7 +96,7 @@ macro_rules! alu_or {
             exec: Box::new(|cpu, _| {
                 cpu.regs.a |= cpu.regs.$reg;
                 cpu.regs.f = (cpu.regs.a == 0).then_some(0x80).unwrap_or(0); // Z
-                false
+                Ok(false)
             }),
         };
     };
@@ -117,7 +117,7 @@ macro_rules! alu_cp {
                     | (lhs == rhs).then_some(0x80).unwrap_or(0) // Z
                     | ((lhs & 0xF) < (rhs & 0xF)).then_some(0x20).unwrap_or(0) // H
                     | (rhs > lhs).then_some(0x10).unwrap_or(0); // C
-                false
+                Ok(false)
             }),
         };
     };
@@ -137,7 +137,7 @@ macro_rules! inc_r {
                     | (result == 0).then_some(0x80).unwrap_or(0) // Z
                     | ((val & 0x0F) + 1 > 0x0F).then_some(0x20).unwrap_or(0); // H
                 cpu.regs.$reg = result;
-                false
+                Ok(false)
             }),
         };
     };
@@ -158,7 +158,7 @@ macro_rules! dec_r {
                     | (result == 0).then_some(0x80).unwrap_or(0) // Z
                     | ((val & 0x0F) == 0).then_some(0x20).unwrap_or(0); // H
                 cpu.regs.$reg = result;
-                false
+                Ok(false)
             }),
         };
     };
@@ -181,7 +181,7 @@ macro_rules! alu_add_n {
                     | (((a & 0xF) + (n & 0xF)) > 0xF).then_some(0x20).unwrap_or(0)
                     | (result < a).then_some(0x10).unwrap_or(0);
                 cpu.regs.a = result;
-                false
+                Ok(false)
             }),
         };
     };
@@ -204,7 +204,7 @@ macro_rules! alu_sub_n {
                     | ((a & 0xF) < (n & 0xF)).then_some(0x20).unwrap_or(0)
                     | (n > a).then_some(0x10).unwrap_or(0);
                 cpu.regs.a = result;
-                false
+                Ok(false)
             }),
         };
     };
@@ -223,7 +223,7 @@ macro_rules! alu_and_n {
                 cpu.regs.a &= n;
                 cpu.regs.f = 0x20 // H
                     | (cpu.regs.a == 0).then_some(0x80).unwrap_or(0);
-                false
+                Ok(false)
             }),
         };
     };
@@ -241,7 +241,7 @@ macro_rules! alu_or_n {
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 cpu.regs.a |= n;
                 cpu.regs.f = (cpu.regs.a == 0).then_some(0x80).unwrap_or(0);
-                false
+                Ok(false)
             }),
         };
     };
@@ -259,7 +259,7 @@ macro_rules! alu_xor_n {
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 cpu.regs.a ^= n;
                 cpu.regs.f = (cpu.regs.a == 0).then_some(0x80).unwrap_or(0);
-                false
+                Ok(false)
             }),
         };
     };
@@ -296,7 +296,7 @@ macro_rules! alu_cp_n {
                     (cpu.regs.f & 0x20) != 0,
                     (cpu.regs.f & 0x10) != 0,
                 );
-                false
+                Ok(false)
             }),
         };
     };
@@ -326,7 +326,7 @@ macro_rules! alu_adc_n {
                     cpu.regs.f |= 0x10;
                 }
                 cpu.regs.a = result;
-                false
+                Ok(false)
             }),
         };
     };
@@ -356,7 +356,7 @@ macro_rules! alu_sbc_n {
                     cpu.regs.f |= 0x10;
                 }
                 cpu.regs.a = result;
-                false
+                Ok(false)
             }),
         };
     };

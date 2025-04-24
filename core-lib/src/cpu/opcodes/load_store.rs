@@ -20,7 +20,7 @@ macro_rules! ld_r_r {
                 {
                     cpu.regs.$dst = cpu.regs.$src;
                 }
-                false
+                Ok(false)
             }),
         };
     };
@@ -36,7 +36,7 @@ macro_rules! ld_r_hl {
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
                 let addr = cpu.regs.hl();
                 cpu.regs.$reg = bus.read(addr);
-                false
+                Ok(false)
             }),
         };
     };
@@ -52,7 +52,7 @@ macro_rules! ld_hl_r {
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
                 let addr = cpu.regs.hl();
                 let _ = bus.write(addr, cpu.regs.$reg);
-                false
+                Ok(false)
             }),
         };
     };
@@ -73,7 +73,7 @@ macro_rules! inc_rr {
                         cpu.regs.$rr()
                     };
                     cpu.regs.[<set_ $rr>](val.wrapping_add(1));
-                    false
+                    Ok(false)
                 }),
             };
         }
@@ -95,7 +95,7 @@ macro_rules! dec_rr {
                         cpu.regs.$rr()
                     };
                     cpu.regs.[<set_ $rr>](val.wrapping_sub(1));
-                    false
+                    Ok(false)
                 }),
             };
         }
@@ -120,7 +120,7 @@ macro_rules! ld_rr_nn {
                     } else {
                         cpu.regs.[<set_ $rr>](value);
                     }
-                    false
+                    Ok(false)
                 }),
             };
         }
@@ -145,7 +145,7 @@ macro_rules! push_rr {
                     let _ = bus.write(cpu.regs.sp, u8::try_from(value >> 8).unwrap_or(0));
                     cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
                     let _ = bus.write(cpu.regs.sp, u8::try_from(value).unwrap_or(0));
-                    false
+                    Ok(false)
                 }),
             };
         }
@@ -172,7 +172,7 @@ macro_rules! pop_rr {
                     } else {
                         cpu.regs.[<set_ $rr>](value);
                     }
-                    false
+                    Ok(false)
                 }),
             };
         }
@@ -203,7 +203,7 @@ macro_rules! add_hl_rr {
                     cpu.regs.f |= 0x10;
                 }
                 cpu.regs.set_hl(result);
-                false
+                Ok(false)
             }),
         };
     };
@@ -226,7 +226,7 @@ macro_rules! ld_nn_sp {
                     addr.wrapping_add(1),
                     u8::try_from(cpu.regs.sp >> 8).unwrap_or(0),
                 );
-                false
+                Ok(false)
             }),
         };
     };
@@ -241,7 +241,7 @@ macro_rules! ld_a_bc {
             conditional_cycles: 0,
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
                 cpu.regs.a = bus.read(cpu.regs.bc());
-                false
+                Ok(false)
             }),
         };
     };
@@ -256,7 +256,7 @@ macro_rules! ld_a_de {
             conditional_cycles: 0,
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
                 cpu.regs.a = bus.read(cpu.regs.de());
-                false
+                Ok(false)
             }),
         };
     };
@@ -271,7 +271,7 @@ macro_rules! ld_bc_a {
             conditional_cycles: 0,
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
                 let _ = bus.write(cpu.regs.bc(), cpu.regs.a);
-                false
+                Ok(false)
             }),
         };
     };
@@ -286,7 +286,7 @@ macro_rules! ld_de_a {
             conditional_cycles: 0,
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
                 let _ = bus.write(cpu.regs.de(), cpu.regs.a);
-                false
+                Ok(false)
             }),
         };
     };
@@ -305,7 +305,7 @@ macro_rules! ld_a_nn {
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(2);
                 let addr = u16::from_le_bytes([low, high]);
                 cpu.regs.a = bus.read(addr);
-                false
+                Ok(false)
             }),
         };
     };
@@ -324,7 +324,7 @@ macro_rules! ld_nn_a {
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(2);
                 let addr = u16::from_le_bytes([low, high]);
                 let _ = bus.write(addr, cpu.regs.a);
-                false
+                Ok(false)
             }),
         };
     };
@@ -340,7 +340,7 @@ macro_rules! ld_a_c {
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
                 let addr = 0xFF00 | u16::from(cpu.regs.c);
                 cpu.regs.a = bus.read(addr);
-                false
+                Ok(false)
             }),
         };
     };
@@ -356,7 +356,7 @@ macro_rules! ld_c_a {
             exec: Box::new(|cpu: &mut CPU, bus: &mut dyn MemoryBusTrait| {
                 let addr = 0xFF00 | u16::from(cpu.regs.c);
                 let _ = bus.write(addr, cpu.regs.a);
-                false
+                Ok(false)
             }),
         };
     };
@@ -373,7 +373,7 @@ macro_rules! ld_a_hld {
                 let addr = cpu.regs.hl();
                 cpu.regs.a = bus.read(addr);
                 cpu.regs.set_hl(addr.wrapping_sub(1));
-                false
+                Ok(false)
             }),
         };
     };
@@ -390,7 +390,7 @@ macro_rules! ld_hld_a {
                 let addr = cpu.regs.hl();
                 let _ = bus.write(addr, cpu.regs.a);
                 cpu.regs.set_hl(addr.wrapping_sub(1));
-                false
+                Ok(false)
             }),
         };
     };
@@ -407,7 +407,7 @@ macro_rules! ld_a_hli {
                 let addr = cpu.regs.hl();
                 cpu.regs.a = bus.read(addr);
                 cpu.regs.set_hl(addr.wrapping_add(1));
-                false
+                Ok(false)
             }),
         };
     };
@@ -424,7 +424,7 @@ macro_rules! ld_hli_a {
                 let addr = cpu.regs.hl();
                 let _ = bus.write(addr, cpu.regs.a);
                 cpu.regs.set_hl(addr.wrapping_add(1));
-                false
+                Ok(false)
             }),
         };
     };
@@ -439,7 +439,7 @@ macro_rules! ld_sp_hl {
             conditional_cycles: 0,
             exec: Box::new(|cpu: &mut CPU, _| {
                 cpu.regs.sp = cpu.regs.hl();
-                false
+                Ok(false)
             }),
         };
     };
@@ -470,7 +470,7 @@ macro_rules! ld_hl_sp_e {
                 if ((sp & 0xFF) + (e as u16 & 0xFF)) > 0xFF {
                     cpu.regs.f |= 0x10;
                 }
-                false
+                Ok(false)
             }),
         };
     };
@@ -488,7 +488,7 @@ macro_rules! ld_ff00_n_a {
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 let addr = 0xFF00 | u16::from(offset);
                 let _ = bus.write(addr, cpu.regs.a);
-                false
+                Ok(false)
             }),
         };
     };
@@ -506,7 +506,7 @@ macro_rules! ld_a_ff00_n {
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 let addr = 0xFF00 | u16::from(offset);
                 cpu.regs.a = bus.read(addr);
-                false
+                Ok(false)
             }),
         };
     };
@@ -525,7 +525,7 @@ macro_rules! ld_a_a16 {
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(2);
                 let addr = u16::from_le_bytes([low, high]);
                 cpu.regs.a = bus.read(addr);
-                false
+                Ok(false)
             }),
         };
     };
@@ -544,7 +544,7 @@ macro_rules! ld_a16_a {
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(2);
                 let addr = u16::from_le_bytes([low, high]);
                 let _ = bus.write(addr, cpu.regs.a);
-                false
+                Ok(false)
             }),
         };
     };

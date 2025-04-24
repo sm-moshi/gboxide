@@ -27,7 +27,7 @@ macro_rules! jp_cc_nn {
                 if (cpu.regs.f & $flag) == $expected {
                     cpu.regs.pc = u16::from_le_bytes([low, high]);
                 }
-                false
+                Ok(false)
             }),
         };
     };
@@ -46,7 +46,7 @@ macro_rules! jr_cc_e {
                 if (cpu.regs.f & $flag) == $expected {
                     cpu.regs.pc = wrapping_add_signed_u16(cpu.regs.pc, e);
                 }
-                false
+                Ok(false)
             }),
         };
     };
@@ -72,7 +72,7 @@ macro_rules! call_cc_nn {
                     // Jump to target address
                     cpu.regs.pc = u16::from_le_bytes([low, high]);
                 }
-                false
+                Ok(false)
             }),
         };
     };
@@ -93,7 +93,7 @@ macro_rules! ret_cc {
                     cpu.regs.sp = cpu.regs.sp.wrapping_add(1);
                     cpu.regs.pc = u16::from_le_bytes([low, high]);
                 }
-                false
+                Ok(false)
             }),
         };
     };
@@ -110,7 +110,7 @@ macro_rules! jp_nn {
                 let low = bus.read(cpu.regs.pc);
                 let high = bus.read(cpu.regs.pc.wrapping_add(1));
                 cpu.regs.pc = u16::from_le_bytes([low, high]);
-                false
+                Ok(false)
             }),
         };
     };
@@ -125,7 +125,7 @@ macro_rules! jp_hl {
             conditional_cycles: 0,
             exec: Box::new(|cpu: &mut CPU, _| {
                 cpu.regs.pc = cpu.regs.hl();
-                false
+                Ok(false)
             }),
         };
     };
@@ -142,7 +142,7 @@ macro_rules! jr_e {
                 let e = i8::from_le_bytes([bus.read(cpu.regs.pc)]);
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 cpu.regs.pc = wrapping_add_signed_u16(cpu.regs.pc, e);
-                false
+                Ok(false)
             }),
         };
     };
@@ -164,7 +164,7 @@ macro_rules! call_nn {
                 cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
                 let _ = bus.write(cpu.regs.sp, u8::try_from(cpu.regs.pc).unwrap_or(0));
                 cpu.regs.pc = u16::from_le_bytes([low, high]);
-                false
+                Ok(false)
             }),
         };
     };
@@ -183,7 +183,7 @@ macro_rules! ret {
                 let high = bus.read(cpu.regs.sp);
                 cpu.regs.sp = cpu.regs.sp.wrapping_add(1);
                 cpu.regs.pc = u16::from_le_bytes([low, high]);
-                false
+                Ok(false)
             }),
         };
     };
@@ -202,7 +202,7 @@ macro_rules! reti {
                 cpu.regs.sp = cpu.regs.sp.wrapping_add(2);
                 cpu.regs.pc = u16::from_le_bytes([low, high]);
                 cpu.ime = true;
-                false
+                Ok(false)
             }),
         };
     };
@@ -221,7 +221,7 @@ macro_rules! rst {
                 cpu.regs.sp = cpu.regs.sp.wrapping_sub(1);
                 let _ = bus.write(cpu.regs.sp, u8::try_from(cpu.regs.pc).unwrap_or(0));
                 cpu.regs.pc = $addr;
-                false
+                Ok(false)
             }),
         };
     };
@@ -236,7 +236,7 @@ macro_rules! di {
             conditional_cycles: 0,
             exec: Box::new(|cpu, _| {
                 cpu.ime = false;
-                false
+                Ok(false)
             }),
         };
     };
@@ -251,7 +251,7 @@ macro_rules! ei {
             conditional_cycles: 0,
             exec: Box::new(|cpu, _| {
                 cpu.ime = true;
-                false
+                Ok(false)
             }),
         };
     };
@@ -266,7 +266,7 @@ macro_rules! halt {
             conditional_cycles: 0,
             exec: Box::new(|cpu, _| {
                 cpu.halted = true;
-                false
+                Ok(false)
             }),
         };
     };
@@ -284,7 +284,7 @@ macro_rules! stop {
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
                 cpu.stopped = true;
-                false
+                Ok(false)
             }),
         };
     };

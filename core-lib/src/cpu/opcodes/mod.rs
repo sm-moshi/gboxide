@@ -31,11 +31,11 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         base_cycles: 0,
         conditional_cycles: 0,
         exec: Box::new(|cpu, bus| {
-            panic!(
+            Err(anyhow::anyhow!(
                 "Unimplemented opcode: {:02X} at PC={:04X}",
                 bus.read(cpu.regs.pc),
                 cpu.regs.pc
-            )
+            ))
         }),
     });
 
@@ -270,7 +270,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         mnemonic: "NOP",
         base_cycles: 4,
         conditional_cycles: 0,
-        exec: Box::new(|_, _| false),
+        exec: Box::new(|_, _| Ok(false)),
     };
     table[0x04] = Opcode {
         mnemonic: "INC B",
@@ -287,7 +287,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 cpu.regs.f |= 0x20;
             }
             cpu.regs.b = result;
-            false
+            Ok(false)
         }),
     };
     table[0x06] = Opcode {
@@ -298,7 +298,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.b = n;
-            false
+            Ok(false)
         }),
     };
     table[0x07] = Opcode {
@@ -313,7 +313,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if carry {
                 cpu.regs.f |= 0x10;
             }
-            false
+            Ok(false)
         }),
     };
     table[0x0E] = Opcode {
@@ -324,7 +324,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.c = n;
-            false
+            Ok(false)
         }),
     };
     table[0x0F] = Opcode {
@@ -339,7 +339,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if carry {
                 cpu.regs.f |= 0x10;
             }
-            false
+            Ok(false)
         }),
     };
     table[0x16] = Opcode {
@@ -350,7 +350,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.d = n;
-            false
+            Ok(false)
         }),
     };
     table[0x17] = Opcode {
@@ -366,7 +366,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if new_carry {
                 cpu.regs.f |= 0x10;
             }
-            false
+            Ok(false)
         }),
     };
     table[0x1E] = Opcode {
@@ -377,7 +377,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.e = n;
-            false
+            Ok(false)
         }),
     };
     table[0x1F] = Opcode {
@@ -393,7 +393,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if new_carry {
                 cpu.regs.f |= 0x10;
             }
-            false
+            Ok(false)
         }),
     };
     table[0x26] = Opcode {
@@ -404,7 +404,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.h = n;
-            false
+            Ok(false)
         }),
     };
     table[0x27] = Opcode {
@@ -434,7 +434,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 cpu.regs.f |= 0x80;
             }
             cpu.regs.a = a;
-            false
+            Ok(false)
         }),
     };
     table[0x2E] = Opcode {
@@ -445,7 +445,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.l = n;
-            false
+            Ok(false)
         }),
     };
     table[0x2F] = Opcode {
@@ -455,7 +455,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: Box::new(|cpu, _| {
             cpu.regs.a = !cpu.regs.a;
             cpu.regs.f |= 0x60; // Set N and H flags
-            false
+            Ok(false)
         }),
     };
     table[0x34] = Opcode {
@@ -475,7 +475,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             }
             cpu.regs.f = f;
             let _ = bus.write(addr, result);
-            false
+            Ok(false)
         }),
     };
     table[0x35] = Opcode {
@@ -496,7 +496,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             }
             cpu.regs.f = f;
             let _ = bus.write(addr, result);
-            false
+            Ok(false)
         }),
     };
     table[0x36] = Opcode {
@@ -508,7 +508,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             let addr = cpu.regs.hl();
             let _ = bus.write(addr, n);
-            false
+            Ok(false)
         }),
     };
     table[0x37] = Opcode {
@@ -518,7 +518,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: Box::new(|cpu, _| {
             cpu.regs.f &= 0x80; // Keep Z flag
             cpu.regs.f |= 0x10; // Set C flag
-            false
+            Ok(false)
         }),
     };
     table[0x3E] = Opcode {
@@ -529,7 +529,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let n = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             cpu.regs.a = n;
-            false
+            Ok(false)
         }),
     };
     table[0x3F] = Opcode {
@@ -540,7 +540,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let carry = cpu.regs.f & 0x10;
             cpu.regs.f &= 0x80; // Keep Z flag
             cpu.regs.f |= carry ^ 0x10; // Toggle C flag
-            false
+            Ok(false)
         }),
     };
     // ALU and memory opcodes
@@ -564,7 +564,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;
-            false
+            Ok(false)
         }),
     };
     // ADC A, r
@@ -590,7 +590,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                         cpu.regs.f |= 0x10;
                     }
                     cpu.regs.a = result;
-                    false
+                    Ok(false)
                 }),
             };
         };
@@ -624,7 +624,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                         cpu.regs.f |= 0x10;
                     }
                     cpu.regs.a = result;
-                    false
+                    Ok(false)
                 }),
             };
         };
@@ -646,7 +646,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if cpu.regs.a == 0 {
                 cpu.regs.f |= 0x80;
             }
-            false
+            Ok(false)
         }),
     };
     // XOR (HL)
@@ -657,7 +657,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: Box::new(|cpu, bus| {
             cpu.regs.a ^= bus.read(cpu.regs.hl());
             cpu.regs.f = if cpu.regs.a == 0 { 0x80 } else { 0x00 };
-            false
+            Ok(false)
         }),
     };
     // OR (HL)
@@ -668,7 +668,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
         exec: Box::new(|cpu, bus| {
             cpu.regs.a |= bus.read(cpu.regs.hl());
             cpu.regs.f = if cpu.regs.a == 0 { 0x80 } else { 0x00 };
-            false
+            Ok(false)
         }),
     };
     // CP (HL)
@@ -689,7 +689,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if v > a {
                 cpu.regs.f |= 0x10;
             }
-            false
+            Ok(false)
         }),
     };
     // CB prefix
@@ -702,7 +702,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             let cb_op = &CB_OPCODES[opcode as usize];
             (cb_op.exec)(cpu, bus);
-            false
+            Ok(false)
         }),
     };
     // ADD SP, e
@@ -728,7 +728,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             if ((sp & 0xFF) + (e as u16 & 0xFF)) > 0xFF {
                 cpu.regs.f |= 0x10;
             }
-            false
+            Ok(false)
         }),
     };
     // Final missing opcodes
@@ -753,7 +753,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;
-            false
+            Ok(false)
         }),
     };
     // ADC A, A
@@ -777,7 +777,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;
-            false
+            Ok(false)
         }),
     };
     // SUB (HL)
@@ -800,7 +800,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;
-            false
+            Ok(false)
         }),
     };
     // SBC A, L
@@ -824,7 +824,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;
-            false
+            Ok(false)
         }),
     };
     // SBC A, A
@@ -848,7 +848,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
                 cpu.regs.f |= 0x10;
             }
             cpu.regs.a = result;
-            false
+            Ok(false)
         }),
     };
 

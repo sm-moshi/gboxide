@@ -1,58 +1,52 @@
 [workspace]
-members  = ["core-lib", "cli", "tests"]
+members  = ["cli", "core-lib", "tests"]
 resolver = "2"
 
 [workspace.package]
 version       = "0.1.0"
 edition       = "2021"
-rust-version  = "1.78.0"
+rust-version  = "1.74.1"
 license       = "MIT OR Apache-2.0"
 repository    = "https://github.com/sm-moshi/gboxide"
 homepage      = "https://github.com/sm-moshi/gboxide"
 documentation = "https://docs.rs/gboxide"
 
-
 [workspace.dependencies]
 core-lib = { path = "core-lib" }
 common   = { path = "common" }
 
-tokio = { version = "1.44.2", features = ["rt-multi-thread", "macros", "time"] }
-
-wgpu     = "25.0.0"
-image    = "0.25.6"
-bytemuck = { version = "1.22", features = ["derive"] }
-winit    = "0.30.9"
-cpal     = "0.15.3"
-clap     = { version = "4.5.37", features = ["derive"] }
-
+tokio          = { version = "1.44.2", features = ["rt-multi-thread", "macros", "time"] }
+wgpu           = "25.0.0"
+image          = "0.25.6"
+bytemuck       = { version = "1.22", features = ["derive"] }
+winit          = "0.30.9"
+cpal           = "0.15.3"
+clap           = { version = "4.5.37", features = ["derive"] }
 dioxus         = { version = "0.6.3", features = ["desktop", "router"] }
 dioxus-desktop = "0.6.3"
+anyhow         = "1.0.98"
+thiserror      = "2.0.12"
+bitflags       = "2.9.0"
+insta          = { version = "1.42.2", features = ["redactions", "yaml", "serde"] }
+criterion      = "0.5.1"
+serde          = { version = "1.0.219", features = ["derive"] }
+serde_json     = "1.0.140"
+getrandom      = { version = "0.3.2", features = ["js"] }
+bincode        = "2.0.1"
+memmap2        = "0.9.5"
+predicates     = "3.1.3"
+pastey         = "0.1.0"
+once_cell      = "1.21.3"
 
+assert_cmd         = "2.0.17"
+tempfile           = "3.19.1"
+pretty_assertions  = "1.4.1"
+test-case          = "3.3.1"
+proptest           = "1.6.0"
 tracing            = "0.1.41"
 tracing-subscriber = "0.3.19"
 tracing-log        = "0.2.0"
 log                = "0.4.27"
-
-anyhow            = "1.0.98"
-thiserror         = "2.0.12"
-bitflags          = "2.9.0"
-bitfield          = "0.19.0"
-pretty_assertions = "1.4.1"
-test-case         = "3.3.1"
-proptest          = "1.6.0"
-insta             = { version = "1.42.2", features = ["redactions", "yaml", "serde"] }
-criterion         = "0.5.1"
-serde             = { version = "1.0.219", features = ["derive"] }
-serde_json        = "1.0.140"
-getrandom         = { version = "0.3.2", features = ["js"] }
-bincode           = "2.0.1"
-memmap2           = "0.9.5"
-predicates        = "3.1.3"
-pastey            = "0.1.0"
-assert_cmd        = "2.0.17"
-once_cell         = "1.21.3"
-
-[patch.crates-io]
 
 [profile.dev]
 opt-level        = 1
@@ -61,17 +55,12 @@ overflow-checks  = true
 lto              = false
 debug-assertions = true
 
-[profile.dev.package]
-insta.opt-level   = 3
-similar.opt-level = 3
-
 [profile.release]
-opt-level     = 3
-lto           = true
+lto           = "fat"
 codegen-units = 1
 debug         = false
 panic         = "abort"
-strip         = "debuginfo"
+strip         = true
 
 [profile.release-wasm]
 inherits  = "release"

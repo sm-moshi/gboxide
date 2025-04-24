@@ -123,22 +123,22 @@ fn test_instruction_timing() -> Result<()> {
     cpu.regs.pc = 0x0100;
 
     // Test NOP timing
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 4, "NOP should take 4 cycles");
     assert_eq!(cpu.get_cycles(), 4);
 
     // Test LD B, n timing
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 8, "LD B, n should take 8 cycles");
     assert_eq!(cpu.get_cycles(), 12);
 
     // Test ADD A, B timing
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 4, "ADD A, B should take 4 cycles");
     assert_eq!(cpu.get_cycles(), 16);
 
     // Test CB prefix instruction timing
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 8, "CB prefix instruction should take 8 cycles");
     assert_eq!(cpu.get_cycles(), 24);
     Ok(())
@@ -157,18 +157,18 @@ fn test_conditional_jump_timing() -> Result<()> {
     cpu.regs.pc = 0x0100;
 
     // Execute LD A, 0
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 8, "LD A, 0 should take 8 cycles");
 
     // Execute JR NZ, 2 (should not jump as Z flag is set)
     cpu.regs.f |= 0x80; // Set Z flag
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 12, "JR NZ (not taken) should take 12 cycles");
 
     // Execute same jump with Z flag clear (should jump)
     cpu.regs.pc = 0x0102; // Reset PC to jump instruction
     cpu.regs.f &= !0x80; // Clear Z flag
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 12, "JR NZ (taken) should take 12 cycles");
     Ok(())
 }
@@ -181,12 +181,12 @@ fn test_halt_timing() -> Result<()> {
     cpu.regs.pc = 0x0100;
 
     // Execute HALT
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 4, "HALT should take 4 cycles");
     assert!(cpu.halted, "CPU should be halted");
 
     // Check cycles while halted
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 4, "Halted CPU should take 4 cycles per step");
     Ok(())
 }
@@ -203,15 +203,15 @@ fn test_memory_operation_timing() -> Result<()> {
     cpu.regs.pc = 0x0100;
 
     // Test LD A, n timing
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 8, "LD A, n should take 8 cycles");
 
     // Test LD (nn), A timing
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 16, "LD (nn), A should take 16 cycles");
 
     // Test LD A, (nn) timing
-    let cycles = cpu.step(&mut mmu);
+    let cycles = cpu.step(&mut mmu).unwrap();
     assert_eq!(cycles, 16, "LD A, (nn) should take 16 cycles");
     Ok(())
 }

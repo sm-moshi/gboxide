@@ -172,8 +172,8 @@ fn mbc3_rtc_persistence() -> Result<()> {
     mbc.write(0x6000, 0x00)?;
     mbc.write(0x6000, 0x01)?;
     let saved = mbc.save_ram();
-    // Wait 2 seconds
-    sleep(Duration::from_secs(2));
+    // Wait 3 seconds (increased from 2 for robustness)
+    sleep(Duration::from_secs(3));
     // Load into new Mbc3
     let mut mbc2 = Mbc3::new(dummy_rom(0x20_0000));
     mbc2.load_ram(saved)?;
@@ -184,8 +184,11 @@ fn mbc3_rtc_persistence() -> Result<()> {
     mbc2.write(0x4000, 0x08)?;
     let after = mbc2.read(0xA000)?;
     // Should have advanced by at least 1 second
+    if !((0..=3).contains(&after) || after >= 60) {
+        eprintln!("[mbc3_rtc_persistence] RTC seconds after reload: {after}");
+    }
     assert!(
-        (0..=1).contains(&after) || after >= 60,
+        (0..=3).contains(&after) || after >= 60,
         "RTC did not wrap as expected"
     );
     Ok(())

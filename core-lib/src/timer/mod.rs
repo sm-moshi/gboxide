@@ -550,7 +550,9 @@ pub mod test_harness;
 #[cfg(test)]
 mod tracing_init {
     use std::sync::Once;
+    #[allow(dead_code)]
     static INIT: Once = Once::new();
+    #[allow(dead_code)]
     pub fn init() {
         INIT.call_once(|| {
             tracing_subscriber::fmt::Subscriber::builder()

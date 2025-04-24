@@ -4,6 +4,7 @@ use anyhow::Result;
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 use test_case::test_case;
+use tracing_subscriber;
 
 #[test]
 fn test_timer_frequencies() -> Result<()> {
@@ -154,7 +155,12 @@ fn test_tac_change_causes_timer_increment() -> Result<()> {
 #[allow(clippy::used_underscore_binding)]
 #[test]
 fn test_cancel_overflow_by_writing_tima() -> Result<()> {
-    crate::timer::tracing_init::init();
+    // Use a per-thread tracing subscriber for this test only
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_test_writer()
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
     let mut harness = TimerTestHarness::setup(
         0xFF,   // TIMA at max value
         0x42,   // TMA value to load
