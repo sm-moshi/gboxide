@@ -4,6 +4,8 @@
 //!
 //! See: <https://gbdev.io/pandocs/Audio.html#ff1a--nr30-channel-3-sound-onoff-rw>
 
+use crate::helpers::{get_bit, get_bits};
+
 /// NR30 - Channel 3 Sound on/off (0xFF1A)
 /// Bit 7 - Sound Channel 3 Off  (0=Stop, 1=Playback)
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -11,12 +13,13 @@ pub struct Nr30(pub u8);
 
 impl Nr30 {
     pub const fn sound_on(self) -> bool {
-        (self.0 & 0x80) != 0
+        get_bit(self.0, 7)
     }
     pub const fn read_reg(self) -> u8 {
         self.0
     }
-    pub fn write_reg(&mut self, value: u8) {
+    /// Write a value to NR30 register
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value & 0x80; // Only bit 7 is used
     }
 }
@@ -33,7 +36,8 @@ impl Nr31 {
     pub const fn read_reg(self) -> u8 {
         self.0
     }
-    pub fn write_reg(&mut self, value: u8) {
+    /// Write a value to NR31 register
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value;
     }
 }
@@ -45,12 +49,13 @@ pub struct Nr32(pub u8);
 
 impl Nr32 {
     pub const fn output_level(self) -> u8 {
-        (self.0 >> 5) & 0x03
+        get_bits(self.0, 0x03, 5)
     }
     pub const fn read_reg(self) -> u8 {
         self.0 & 0x60 // Only bits 6-5 are used
     }
-    pub fn write_reg(&mut self, value: u8) {
+    /// Write a value to NR32 register
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value & 0x60;
     }
 }
@@ -67,7 +72,8 @@ impl Nr33 {
     pub const fn read_reg(self) -> u8 {
         self.0
     }
-    pub fn write_reg(&mut self, value: u8) {
+    /// Write a value to NR33 register
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value;
     }
 }
@@ -81,18 +87,19 @@ pub struct Nr34(pub u8);
 
 impl Nr34 {
     pub const fn trigger(self) -> bool {
-        (self.0 & 0x80) != 0
+        get_bit(self.0, 7)
     }
     pub const fn length_enable(self) -> bool {
-        (self.0 & 0x40) != 0
+        get_bit(self.0, 6)
     }
     pub const fn freq_high(self) -> u8 {
-        self.0 & 0x07
+        get_bits(self.0, 0x07, 0)
     }
     pub const fn read_reg(self) -> u8 {
         self.0 & 0xC7 // Only bits 7,6,2-0 are used
     }
-    pub fn write_reg(&mut self, value: u8) {
+    /// Write a value to NR34 register
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value & 0xC7;
     }
 }
@@ -146,7 +153,7 @@ impl Channel3 {
         }
     }
     /// Write a register by offset (0=NR30, 1=NR31, 2=NR32, 3=NR33, 4=NR34)
-    pub fn write_reg(&mut self, offset: u8, value: u8) {
+    pub const fn write_reg(&mut self, offset: u8, value: u8) {
         match offset {
             0 => self.nr30.write_reg(value),
             1 => self.nr31.write_reg(value),
@@ -160,10 +167,10 @@ impl Channel3 {
     pub fn read_wave_ram(&self, index: usize) -> u8 {
         self.wave_ram.get(index).copied().unwrap_or(0xFF)
     }
-    /// Write a byte to wave RAM (0–15)
-    pub fn write_wave_ram(&mut self, index: usize, value: u8) {
-        if index < 16 {
-            self.wave_ram[index] = value;
+    /// Writes a value to wave RAM at the given index
+    pub const fn write_wave_ram(&mut self, index: usize, val: u8) {
+        if index < self.wave_ram.len() {
+            self.wave_ram[index] = val;
         }
     }
     /// Trigger the channel (start playback, reload length if zero)

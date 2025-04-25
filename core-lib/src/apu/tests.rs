@@ -7,7 +7,6 @@ use super::{
     Apu, NR10_ADDR, NR11_ADDR, NR12_ADDR, NR13_ADDR, NR14_ADDR, NR30_ADDR, NR31_ADDR, NR32_ADDR,
     NR33_ADDR, NR34_ADDR, NR41_ADDR, NR42_ADDR, NR43_ADDR, NR44_ADDR, WAVE_RAM_START,
 };
-use crate::apu::{FrameSequencer, NR21_ADDR};
 use once_cell::sync::Lazy;
 use pretty_assertions::assert_eq;
 use tracing::info;
@@ -570,7 +569,7 @@ mod channel2_bitfield_tests {
         nr21.write_reg(0b1010_1100);
         assert_eq!(nr21.read_reg(), 0b1010_1100);
         assert_eq!(nr21.duty(), 0b10);
-        assert_eq!(nr21.length(), 0b101100);
+        assert_eq!(nr21.length(), 0b10_1100);
     }
 
     #[test]
@@ -621,8 +620,8 @@ mod channel2_bitfield_tests {
 #[cfg(test)]
 mod apu_mod_coverage {
     use crate::apu::{
-        Apu, Channel1, Channel2, FrameSequencer, NR10_ADDR, NR11_ADDR, NR21_ADDR, NR30_ADDR,
-        NR42_ADDR, WAVE_RAM_START,
+        Apu, Channel1, Channel2, FrameSequencer, NR10_ADDR, NR21_ADDR, NR30_ADDR, NR42_ADDR,
+        WAVE_RAM_START,
     };
     // Use standard assert_eq!
     #[test]

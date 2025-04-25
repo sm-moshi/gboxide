@@ -4,10 +4,6 @@
 //!
 //! Keeping load/store logic separate improves clarity and maintainability.
 
-// use super::types::Opcode;
-// use crate::cpu::CPU;
-// use crate::mmu::MemoryBusTrait;
-
 #[macro_export]
 macro_rules! ld_r_r {
     ($table:ident, $code:expr, $dst:ident, $src:ident) => {

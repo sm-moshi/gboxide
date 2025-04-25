@@ -1,6 +1,7 @@
 use super::color::Color;
 use super::lcdc::LcdControl;
-use super::ppu::{Ppu, Sprite};
+use super::ppu::Ppu;
+use super::sprite::Sprite;
 use super::stat::LcdStatus;
 use super::{PpuMode, SCREEN_WIDTH};
 use super::{LCDC_ADDR, OAM_SIZE, SCX_ADDR, SCY_ADDR};

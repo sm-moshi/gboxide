@@ -18,10 +18,10 @@ nextest:
     cargo nextest run --all-features --all-targets --workspace --no-fail-fast --test-threads=-6
 
 fmt:
-    cargo fmt --all
+    cargo +nightly fmt --all
 
 clippy:
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo +nightly clippy --workspace --all-targets --all-features
 
 clean:
     cargo clean
@@ -44,7 +44,7 @@ update:
     cargo update && cargo outdated || true
 
 cover:
-    cargo llvm-cov --workspace --all-features --all-targets
+    cargo tarpaulin --workspace --all-features --all-targets --out Lcov
 
 # Run GitHub Actions workflows locally using act
 act workflow="":

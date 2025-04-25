@@ -19,7 +19,7 @@ pub struct Sweep {
 
 impl Sweep {
     /// Clock the sweep unit (hardware-accurate)
-    pub fn clock(&mut self) {
+    pub const fn clock(&mut self) {
         // Only run sweep if enabled and shift > 0
         if self.enabled && self.shift > 0 {
             // Calculate new frequency
@@ -40,7 +40,7 @@ impl Sweep {
         }
     }
     /// Trigger the sweep (reset state and perform initial calculation if needed)
-    pub fn trigger(&mut self, freq: u16) {
+    pub const fn trigger(&mut self, freq: u16) {
         self.enabled = self.period != 0 || self.shift != 0;
         self.timer = if self.period == 0 { 8 } else { self.period };
         self.shadow_freq = freq;
@@ -58,7 +58,7 @@ impl Sweep {
         }
     }
     /// Reset the sweep state
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.enabled = false;
         self.timer = 0;
         self.shadow_freq = 0;

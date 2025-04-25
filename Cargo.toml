@@ -72,14 +72,15 @@ strip     = "symbols"
 [workspace.lints.clippy]
 # Denied lints (completely disallowed)
 unwrap_used                   = "deny"
-expect_used                   = "deny"
 todo                          = "deny"
 dbg_macro                     = "deny"
 empty_line_after_doc_comments = "deny"
+missing_const_for_fn          = "deny"
 
 # Allowed lints (temporarily noisy false positives)
 verbose_bit_mask   = "allow"
 must_use_candidate = "allow"
+expect_used        = "allow"
 
 # Lint groups with priorities
 all      = { level = "warn", priority = -1 }

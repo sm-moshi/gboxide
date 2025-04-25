@@ -1,3 +1,4 @@
+use crate::helpers::{get_bit, get_bits, set_bits};
 /// # Timer Module
 ///
 /// The Game Boy timer system consists of several hardware components:
@@ -133,7 +134,8 @@ impl Timer {
     /// Get the frequency divider based on the current timer frequency
     #[instrument(skip(self), level = "trace")]
     pub fn get_frequency_divider(&self) -> u16 {
-        match self.tac.bits() & TacReg::CLOCK_SELECT.bits() {
+        let sel = get_bits(self.tac.bits(), TacReg::CLOCK_SELECT.bits(), 0);
+        match sel {
             0b00 => 1024, // 4096 Hz (CPU Clock / 1024)
             0b01 => 16,   // 262144 Hz (CPU Clock / 16)
             0b10 => 64,   // 65536 Hz (CPU Clock / 64)
@@ -145,7 +147,8 @@ impl Timer {
     /// Get the counter mask based on the current timer frequency
     #[instrument(skip(self), level = "trace")]
     pub fn get_counter_mask(&self) -> u16 {
-        match self.tac.bits() & TacReg::CLOCK_SELECT.bits() {
+        let sel = get_bits(self.tac.bits(), TacReg::CLOCK_SELECT.bits(), 0);
+        match sel {
             0b00 => 1 << 9, // 4096 Hz - bit 9 (CPU clock / 1024)
             0b01 => 1 << 3, // 262144 Hz - bit 3 (CPU clock / 16)
             0b10 => 1 << 5, // 65536 Hz - bit 5 (CPU clock / 64)
@@ -161,13 +164,25 @@ impl Timer {
     }
 
     /// Get the current counter bit based on DIV and TAC
-    #[allow(clippy::used_underscore_binding)]
+    #[instrument(skip(self), level = "trace")]
     pub fn get_input(&self) -> bool {
-        if !self.tac.contains(TacReg::TIMER_ENABLE) {
+        // bit 2 (mask 0b100) is TIMER_ENABLE
+        if !get_bit(
+            self.tac.bits(),
+            TacReg::TIMER_ENABLE.bits().trailing_zeros() as u8,
+        ) {
             return false;
         }
-        let _mask = self.get_counter_mask();
-        (self.div_counter & _mask) != 0
+        let mask = self.get_counter_mask();
+        (self.div_counter & mask) != 0
+    }
+
+    /// Sets the clock-select field (bits 1–0) of TAC to `sel`.
+    /// Useful for dynamically changing timer frequency.
+    pub const fn set_clock_select(&mut self, sel: u8) {
+        let raw = self.tac.bits();
+        let new_raw = set_bits(raw, TacReg::CLOCK_SELECT.bits(), 0, sel);
+        self.tac = TacReg::from_bits_truncate(new_raw);
     }
 
     /// Get the current timer state

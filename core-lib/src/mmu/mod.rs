@@ -33,7 +33,7 @@ impl Joypad {
     }
 
     /// Set the button state (bit: 0=pressed, 1=released)
-    pub fn set_button(&mut self, button: GameBoyButton, pressed: bool) {
+    pub const fn set_button(&mut self, button: GameBoyButton, pressed: bool) {
         let idx = button.to_index();
         if pressed {
             self.state &= !(1 << idx);
@@ -59,7 +59,7 @@ impl Joypad {
     }
 
     /// Write to the joypad select bits
-    pub fn write(&mut self, value: u8) {
+    pub const fn write(&mut self, value: u8) {
         self.select = value & 0x30;
     }
 }

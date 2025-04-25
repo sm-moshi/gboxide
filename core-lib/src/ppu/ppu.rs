@@ -1,11 +1,10 @@
-use crate::helpers::{extract_colour_index, tile_data_address, unpack_tile_attributes};
 use crate::interrupts::InterruptFlag;
 
 use super::color::Color;
-use super::helpers::{
-    cgb_bg_color, collect_visible_sprites, get_bg_priority, set_bg_priority, sprite_pixel_for_x,
-};
 use super::lcdc::LcdControl;
+use super::ppu_modes;
+use super::render;
+use super::sprite::OamScanResult;
 use super::stat::LcdStatus;
 use super::VRAM_BANK_SIZE;
 use super::{PpuError, PpuMode, SCREEN_HEIGHT, SCREEN_WIDTH};
@@ -13,76 +12,6 @@ use super::{
     BGP_ADDR, LCDC_ADDR, LYC_ADDR, LY_ADDR, OAM_SIZE, OBP0_ADDR, OBP1_ADDR, SCX_ADDR, SCY_ADDR,
     STAT_ADDR, VRAM_SIZE, WX_ADDR, WY_ADDR,
 };
-
-/// Sprite attributes structure (OAM entry)
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Sprite {
-    pub y_pos: u8,      // Y coordinate (minus 16)
-    pub x_pos: u8,      // X coordinate (minus 8)
-    pub tile_idx: u8,   // Tile index
-    pub attributes: u8, // Attributes (priority, flip, palette)
-}
-
-bitflags::bitflags! {
-    /// Sprite attribute flags
-    #[derive(Debug, Clone, Copy)]
-    pub struct SpriteAttributes: u8 {
-        const PRIORITY = 0x80;
-        const Y_FLIP = 0x40;
-        const X_FLIP = 0x20;
-        const PALETTE = 0x10;
-    }
-}
-
-impl Sprite {
-    /// Create a sprite from OAM data
-    pub fn from_oam(oam: &[u8], index: usize) -> Self {
-        let base = index * 4;
-        Self {
-            y_pos: oam[base],
-            x_pos: oam[base + 1],
-            tile_idx: oam[base + 2],
-            attributes: oam[base + 3],
-        }
-    }
-
-    /// Check if this sprite has priority over the background
-    /// When this bit is 0, sprite has priority
-    /// When this bit is 1, sprite is behind colors 1-3 of BG/Window
-    pub const fn has_priority(&self) -> bool {
-        !SpriteAttributes::from_bits_truncate(self.attributes).contains(SpriteAttributes::PRIORITY)
-    }
-
-    /// Check if this sprite is flipped horizontally (X)
-    pub const fn is_x_flipped(&self) -> bool {
-        SpriteAttributes::from_bits_truncate(self.attributes).contains(SpriteAttributes::X_FLIP)
-    }
-
-    /// Check if this sprite is flipped vertically (Y)
-    pub const fn is_y_flipped(&self) -> bool {
-        SpriteAttributes::from_bits_truncate(self.attributes).contains(SpriteAttributes::Y_FLIP)
-    }
-
-    /// Get the palette for this sprite (0 or 1)
-    pub const fn palette(&self) -> u8 {
-        if SpriteAttributes::from_bits_truncate(self.attributes).contains(SpriteAttributes::PALETTE)
-        {
-            1
-        } else {
-            0
-        }
-    }
-
-    /// Get the adjusted Y position
-    pub const fn y_position(&self) -> i32 {
-        self.y_pos as i32 - 16
-    }
-
-    /// Get the adjusted X position
-    pub const fn x_position(&self) -> i32 {
-        self.x_pos as i32 - 8
-    }
-}
 
 /// Pixel Processing Unit implementation
 #[derive(Debug)]
@@ -114,6 +43,9 @@ pub struct Ppu {
     pub(crate) mode_cycles: u32, // Cycles in the current mode
     pub(crate) window_line: u8,  // Current window line (internal counter)
 
+    // OAM scan results (sprites visible on current scanline)
+    pub(crate) oam_scan_result: OamScanResult,
+
     // Frame buffer
     pub frame_buffer: Box<[Color]>,
     pub frame_ready: bool, // Flag indicating a new frame is ready
@@ -142,6 +74,7 @@ impl Default for Ppu {
             mode: PpuMode::OamSearch,
             mode_cycles: 0,
             window_line: 0,
+            oam_scan_result: OamScanResult::new(),
             frame_buffer: vec![Color::WHITE; SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
             frame_ready: false,
             vram_bank: 0,
@@ -205,116 +138,8 @@ impl Ppu {
     }
 
     /// Reset window line counter
-    fn reset_window_counter(&mut self) {
+    const fn reset_window_counter(&mut self) {
         self.window_line = 0;
-    }
-
-    /// Render the window for the current scanline
-    ///
-    /// Note: The `_priority` variable is extracted for future CGB compatibility and to document the attribute layout, but is currently unused. Prefixing with underscore silences warnings.
-    #[allow(clippy::branches_sharing_code)]
-    fn render_window(&mut self) {
-        // Check if window is visible on this scanline
-        if self.ly < self.wy || self.wx > 166 {
-            return;
-        }
-
-        // Get window tile map address based on LCDC bit 6
-        let window_tilemap_base = if self.lcdc.contains(LcdControl::WINDOW_TILEMAP) {
-            0x1C00u16 // 0x9C00 relative to 0x8000
-        } else {
-            0x1800u16 // 0x9800 relative to 0x8000
-        };
-
-        // Get tile data address based on LCDC bit 4 (same as BG)
-        let tiledata_base = if self.lcdc.contains(LcdControl::BG_WINDOW_TILE_DATA) {
-            0x0000u16 // 0x8000 (unsigned tile indices)
-        } else {
-            0x1000u16 // 0x9000 (signed tile indices)
-        };
-        let signed = !self.lcdc.contains(LcdControl::BG_WINDOW_TILE_DATA);
-
-        // Calculate Y position in the window
-        let window_y = self.window_line;
-        let tile_y = u16::from(window_y / 8);
-        let tile_y_offset = window_y % 8;
-
-        // Calculate offset in the frame buffer for this scanline
-        let scanline_offset = self.ly as usize * SCREEN_WIDTH;
-
-        // Calculate X positions
-        let window_x = self.wx as isize - 7;
-
-        // Render window pixels
-        for x in 0..SCREEN_WIDTH {
-            if isize::try_from(x).unwrap_or(0) < window_x {
-                continue;
-            }
-            let window_x_pos =
-                u16::try_from(isize::try_from(x).unwrap_or(0) - window_x).unwrap_or(0);
-            let tile_x = window_x_pos / 8;
-            let tile_x_offset = window_x_pos % 8;
-
-            // Calculate tile map address
-            let tile_map_addr = window_tilemap_base + tile_y * 32 + tile_x;
-            let tile_id = self.vram[tile_map_addr as usize];
-
-            // CGB: Read tile attributes for palette, bank, flipping, priority
-            #[allow(clippy::used_underscore_binding)]
-            let (palette_num, vram_bank, x_flip, y_flip, priority) = if self.is_cgb {
-                let attr = self
-                    .vram
-                    .get(tile_map_addr as usize + 0x2000)
-                    .copied()
-                    .unwrap_or(0);
-                unpack_tile_attributes(attr)
-            } else {
-                (0, 0, false, false, false)
-            };
-
-            // Calculate tile data address (depends on addressing mode)
-            let tile_addr = tile_data_address(tiledata_base, tile_id, signed);
-
-            // CGB: Use correct VRAM bank for tile data
-            let vram_offset = if self.is_cgb && vram_bank == 1 {
-                0x2000
-            } else {
-                0
-            };
-
-            let tile_line = if self.is_cgb && y_flip {
-                7u16 - u16::from(tile_y_offset)
-            } else {
-                u16::from(tile_y_offset)
-            };
-
-            let tile_line_addr = tile_addr + tile_line * 2;
-            let tile_line_addr_usize = usize::from(tile_line_addr);
-            let tile_data_low = self.vram[vram_offset + tile_line_addr_usize];
-            let tile_data_high = self.vram[vram_offset + tile_line_addr_usize + 1];
-
-            let bit = u8::try_from(if self.is_cgb && x_flip {
-                tile_x_offset
-            } else {
-                7 - tile_x_offset
-            })
-            .unwrap_or(0);
-            let color_idx = extract_colour_index(tile_data_low, tile_data_high, bit);
-
-            let color = if self.is_cgb {
-                cgb_bg_color(color_idx, palette_num, &self.bgp_data)
-            } else {
-                Color::from_palette(color_idx, self.bgp)
-            };
-            self.frame_buffer[scanline_offset + x] = color;
-            // Track BG priority bit for this pixel (CGB only, now as bitfield)
-            if self.is_cgb {
-                set_bg_priority(&mut self.bg_priority_buffer, scanline_offset + x, priority);
-            }
-        }
-
-        // Increment internal window line counter
-        self.window_line = self.window_line.wrapping_add(1);
     }
 
     /// Step the PPU by the given number of cycles
@@ -332,20 +157,28 @@ impl Ppu {
         // Process current PPU mode
         match self.mode {
             PpuMode::OamSearch => {
-                if self.mode_cycles >= self.mode.duration() {
-                    // Transition to pixel transfer mode
-                    self.set_mode(PpuMode::PixelTransfer);
-                    self.mode_cycles -= PpuMode::OamSearch.duration();
+                let (new_mode, remaining_cycles) = ppu_modes::handle_mode_2(
+                    self.mode_cycles,
+                    &self.oam,
+                    self.ly,
+                    self.lcdc,
+                    &mut self.oam_scan_result,
+                );
+
+                if new_mode != PpuMode::OamSearch {
+                    self.set_mode(new_mode);
+                    self.mode_cycles = remaining_cycles;
                 }
             }
             PpuMode::PixelTransfer => {
-                if self.mode_cycles >= self.mode.duration() {
-                    // Render scanline before transitioning to HBlank
-                    self.render_scanline();
+                let (new_mode, remaining_cycles) = ppu_modes::handle_mode_3(self.mode_cycles);
 
-                    // Transition to HBlank mode
-                    self.set_mode(PpuMode::HBlank);
-                    self.mode_cycles -= PpuMode::PixelTransfer.duration();
+                if new_mode != PpuMode::PixelTransfer {
+                    // Render scanline before transitioning to HBlank
+                    render::Renderer.render_scanline(self);
+
+                    self.set_mode(new_mode);
+                    self.mode_cycles = remaining_cycles;
 
                     // Check if HBlank interrupt should be triggered
                     if self.check_stat_interrupt() {
@@ -354,232 +187,60 @@ impl Ppu {
                 }
             }
             PpuMode::HBlank => {
-                if self.mode_cycles >= self.mode.duration() {
+                let (new_mode, remaining_cycles) = ppu_modes::handle_mode_0(self.mode_cycles);
+
+                if new_mode != self.mode {
                     self.ly += 1;
                     self.update_lyc_flag();
+                    self.mode_cycles = remaining_cycles;
 
-                    // Check if LYC=LY interrupt should be triggered
+                    if self.ly == 144 {
+                        self.set_mode(PpuMode::VBlank);
+                        interrupt = Some(InterruptFlag::VBlank);
+                    } else {
+                        self.set_mode(PpuMode::OamSearch);
+                        if self.check_stat_interrupt() {
+                            interrupt = Some(InterruptFlag::LcdStat);
+                        }
+                    }
                     if self.check_lyc_interrupt() {
                         interrupt = Some(InterruptFlag::LcdStat);
-                    }
-
-                    self.mode_cycles -= PpuMode::HBlank.duration();
-
-                    if self.ly >= u8::try_from(SCREEN_HEIGHT).unwrap_or(0) {
-                        // End of frame, transition to VBlank
-                        self.set_mode(PpuMode::VBlank);
-                        self.frame_ready = true; // Signal that a new frame is ready
-                        interrupt = Some(InterruptFlag::VBlank);
-
-                        // Also check if VBlank STAT interrupt should be triggered
-                        if self.check_stat_interrupt() {
-                            interrupt = Some(InterruptFlag::LcdStat);
-                        }
-                    } else {
-                        // Start next scanline with OAM search
-                        self.set_mode(PpuMode::OamSearch);
-
-                        // Check if OAM interrupt should be triggered
-                        if self.check_stat_interrupt() {
-                            interrupt = Some(InterruptFlag::LcdStat);
-                        }
                     }
                 }
             }
             PpuMode::VBlank => {
-                if self.mode_cycles >= self.mode.duration() {
-                    self.ly += 1;
+                let (new_mode, remaining_cycles, reset_ly) =
+                    ppu_modes::handle_mode_1(self.mode_cycles, self.ly);
+
+                if new_mode != self.mode || reset_ly {
+                    if reset_ly {
+                        self.ly = 0;
+                        self.reset_window_counter(); // Reset window line counter at start of frame
+                    } else {
+                        self.ly += 1;
+                    }
+
                     self.update_lyc_flag();
+                    self.mode_cycles = remaining_cycles;
+
+                    if new_mode != self.mode {
+                        self.set_mode(new_mode);
+
+                        // Check if OAM interrupt should be triggered when returning to OAM scan
+                        if new_mode == PpuMode::OamSearch && self.check_stat_interrupt() {
+                            interrupt = Some(InterruptFlag::LcdStat);
+                        }
+                    }
 
                     // Check if LYC=LY interrupt should be triggered
                     if self.check_lyc_interrupt() {
                         interrupt = Some(InterruptFlag::LcdStat);
-                    }
-
-                    self.mode_cycles -= PpuMode::VBlank.duration();
-
-                    if self.ly >= 154 {
-                        // End of VBlank, start new frame
-                        self.ly = 0;
-                        self.reset_window_counter(); // Reset window line counter at start of frame
-                        self.update_lyc_flag();
-                        self.set_mode(PpuMode::OamSearch);
-
-                        // Check if OAM interrupt should be triggered
-                        if self.check_stat_interrupt() {
-                            interrupt = Some(InterruptFlag::LcdStat);
-                        }
                     }
                 }
             }
         }
 
         interrupt
-    }
-
-    /// Render the current scanline to the frame buffer
-    fn render_scanline(&mut self) {
-        if !self.lcdc.contains(LcdControl::LCD_ENABLE) {
-            // LCD is disabled, fill with white
-            let start = self.ly as usize * SCREEN_WIDTH;
-            let end = start + SCREEN_WIDTH;
-            self.frame_buffer[start..end].fill(Color::WHITE);
-            return;
-        }
-
-        // Render background and window first (if enabled)
-        if self.lcdc.contains(LcdControl::BG_WINDOW_ENABLE) {
-            self.render_background();
-
-            // Render window if enabled
-            if self.lcdc.contains(LcdControl::WINDOW_ENABLE) {
-                self.render_window();
-            }
-        } else {
-            // If background is disabled, fill with white
-            let start = self.ly as usize * SCREEN_WIDTH;
-            let end = start + SCREEN_WIDTH;
-            self.frame_buffer[start..end].fill(Color::WHITE);
-        }
-
-        // Render sprites if enabled
-        if self.lcdc.contains(LcdControl::SPRITE_ENABLE) {
-            self.render_sprites();
-        }
-    }
-
-    /// Render the background for the current scanline
-    fn render_background(&mut self) {
-        // Get tile map address based on LCDC bit 3
-        let tilemap_base = if self.lcdc.contains(LcdControl::BG_TILEMAP) {
-            0x1C00u16 // 0x9C00 relative to 0x8000
-        } else {
-            0x1800u16 // 0x9800 relative to 0x8000
-        };
-
-        // Get tile data address based on LCDC bit 4
-        let tiledata_base = if self.lcdc.contains(LcdControl::BG_WINDOW_TILE_DATA) {
-            0x0000u16 // 0x8000 (unsigned tile indices)
-        } else {
-            0x1000u16 // 0x9000 (signed tile indices)
-        };
-        let signed = !self.lcdc.contains(LcdControl::BG_WINDOW_TILE_DATA);
-
-        // Calculate Y position in the background map
-        let y_pos = (u16::from(self.ly) + u16::from(self.scy)) & 0xFF;
-        let tile_y = y_pos / 8;
-        let tile_y_offset = y_pos % 8;
-
-        // Calculate offset in the frame buffer for this scanline
-        let scanline_offset = self.ly as usize * SCREEN_WIDTH;
-
-        for x in 0..SCREEN_WIDTH {
-            let x_pos = (u16::try_from(x).unwrap_or(0) + u16::from(self.scx)) & 0xFF;
-            let tile_x = x_pos / 8;
-            let tile_x_offset = x_pos % 8;
-
-            let tile_map_addr = tilemap_base + tile_y * 32 + tile_x;
-            let tile_id = self.vram[tile_map_addr as usize];
-
-            // CGB: Read tile attributes for palette, bank, flipping, priority
-            #[allow(clippy::used_underscore_binding)]
-            let (palette_num, vram_bank, x_flip, y_flip, priority) = if self.is_cgb {
-                // Attribute map is at 0x2000 offset in VRAM
-                let attr = self
-                    .vram
-                    .get(tile_map_addr as usize + 0x2000)
-                    .copied()
-                    .unwrap_or(0);
-                unpack_tile_attributes(attr)
-            } else {
-                (0, 0, false, false, false)
-            };
-
-            // Calculate tile data address (depends on addressing mode)
-            let tile_addr = tile_data_address(tiledata_base, tile_id, signed);
-
-            // CGB: Use correct VRAM bank for tile data
-            let vram_offset = if self.is_cgb && vram_bank == 1 {
-                0x2000
-            } else {
-                0
-            };
-
-            let tile_line = if self.is_cgb && y_flip {
-                7u16 - tile_y_offset
-            } else {
-                tile_y_offset
-            };
-
-            let tile_line_addr = tile_addr + tile_line * 2;
-            let tile_line_addr_usize = usize::from(tile_line_addr);
-            let tile_data_low = self.vram[vram_offset + tile_line_addr_usize];
-            let tile_data_high = self.vram[vram_offset + tile_line_addr_usize + 1];
-
-            let bit = u8::try_from(if self.is_cgb && x_flip {
-                tile_x_offset
-            } else {
-                7 - tile_x_offset
-            })
-            .unwrap_or(0);
-            let color_idx = extract_colour_index(tile_data_low, tile_data_high, bit);
-
-            let color = if self.is_cgb {
-                cgb_bg_color(color_idx, palette_num, &self.bgp_data)
-            } else {
-                Color::from_palette(color_idx, self.bgp)
-            };
-            self.frame_buffer[scanline_offset + x] = color;
-            // Track BG priority bit for this pixel (CGB only, now as bitfield)
-            if self.is_cgb {
-                set_bg_priority(&mut self.bg_priority_buffer, scanline_offset + x, priority);
-            }
-        }
-    }
-
-    /// Render sprites for the current scanline
-    fn render_sprites(&mut self) {
-        if !self.lcdc.contains(LcdControl::SPRITE_ENABLE) {
-            return;
-        }
-
-        let sprite_height = if self.lcdc.contains(LcdControl::SPRITE_SIZE) {
-            16
-        } else {
-            8
-        };
-
-        let visible_sprites = collect_visible_sprites(self, sprite_height);
-        for x in 0..SCREEN_WIDTH {
-            if let Some((_, _color_idx, color, dmg_priority, cgb_priority)) =
-                sprite_pixel_for_x(x, self.ly, sprite_height, &visible_sprites, self)
-            {
-                let pixel_index = self.ly as usize * SCREEN_WIDTH + x;
-                let bg_color = self.frame_buffer[pixel_index];
-                let bg_is_white = bg_color == Color::WHITE;
-                let bg_priority = if self.is_cgb {
-                    get_bg_priority(&self.bg_priority_buffer, pixel_index)
-                } else {
-                    false
-                };
-                if self.is_cgb {
-                    // CGB: If BG priority bit is set, sprite is behind BG unless BG color is 0
-                    // See Pandocs: https://gbdev.io/pandocs/Tile_Maps.html#bg-attribute-map
-                    if bg_priority {
-                        if bg_is_white {
-                            self.frame_buffer[pixel_index] = color;
-                        }
-                    } else if !cgb_priority || bg_is_white {
-                        self.frame_buffer[pixel_index] = color;
-                    }
-                } else {
-                    // DMG: If priority is set, sprite is behind BG unless BG color is 0
-                    if !dmg_priority || bg_is_white {
-                        self.frame_buffer[pixel_index] = color;
-                    }
-                }
-            }
-        }
     }
 
     /// Read from a PPU register or memory
@@ -775,7 +436,7 @@ impl Ppu {
     }
 
     /// Clear the frame ready flag
-    pub fn clear_frame_ready(&mut self) {
+    pub const fn clear_frame_ready(&mut self) {
         self.frame_ready = false;
     }
 
@@ -790,8 +451,12 @@ impl Ppu {
     }
 
     /// Write to OAM via DMA
-    pub fn dma_write(&mut self, data: &[u8; OAM_SIZE]) {
+    pub const fn dma_write(&mut self, data: &[u8; OAM_SIZE]) {
         // During DMA, data is copied from the source to OAM regardless of PPU mode
         self.oam.copy_from_slice(data);
+    }
+
+    pub(crate) fn bg_priority_buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.bg_priority_buffer
     }
 }

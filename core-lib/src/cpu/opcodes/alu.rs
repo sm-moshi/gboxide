@@ -4,10 +4,6 @@
 //!
 //! Keeping ALU logic separate improves clarity and maintainability.
 
-// use super::types::Opcode;
-// use crate::cpu::CPU;
-// use crate::mmu::MemoryBusTrait;
-
 #[macro_export]
 macro_rules! alu_add {
     ($table:ident, $code:expr, $reg:ident) => {

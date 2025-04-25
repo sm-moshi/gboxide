@@ -1,9 +1,13 @@
 use crate::helpers::{extract_colour_index, unpack_tile_attributes};
 use crate::ppu::color::Color;
-use crate::ppu::ppu::Sprite;
+use crate::ppu::sprite::Sprite;
 use crate::ppu::MAX_SPRITES_PER_LINE;
 
 /// Collect up to 10 visible sprites for this scanline, in OAM order
+///
+/// Hardware-accurate: Only the first 10 visible sprites (lowest OAM index) are used per scanline (see Pandocs).
+/// This function enforces the hardware limit and OAM priority order. Sprites are visible if the scanline is within [Y, Y+height).
+#[allow(dead_code)]
 pub(crate) fn collect_visible_sprites(
     ppu: &crate::ppu::Ppu,
     sprite_height: i32,
@@ -25,6 +29,12 @@ pub(crate) fn collect_visible_sprites(
 }
 
 /// For a given x, find the topmost sprite pixel and its properties
+///
+/// Returns the first non-transparent sprite pixel at x for the current scanline, in OAM order (lowest index = highest priority).
+/// Handles X/Y flipping, palette selection, CGB attributes, and transparency (colour 0 is always transparent).
+///
+/// Hardware: When sprites overlap, the one with the lower OAM index is drawn in front (see Pandocs). Only non-zero colour indices are visible.
+#[allow(dead_code)]
 pub(crate) fn sprite_pixel_for_x(
     x: usize,
     ly: u8,
@@ -66,8 +76,11 @@ pub(crate) fn sprite_pixel_for_x(
             } else {
                 0
             };
-            let low_byte = ppu.vram[vram_offset + tile_addr as usize];
-            let high_byte = ppu.vram[vram_offset + (tile_addr + 1) as usize];
+            let low_addr = vram_offset + tile_addr as usize;
+            let high_addr = vram_offset + (tile_addr + 1) as usize;
+            let low_byte = ppu.vram[low_addr];
+            let high_byte = ppu.vram[high_addr];
+            eprintln!("[DEBUG VRAM ACCESS] vram_bank={}, tile_addr=0x{:04X}, low_addr=0x{:04X}, high_addr=0x{:04X}, low_byte={:08b}, high_byte={:08b}", vram_bank, tile_addr, low_addr, high_addr, low_byte, high_byte);
             let screen_x = x_i32 - x_pos;
             let bit = if x_flip {
                 u8::try_from(screen_x).unwrap_or(0)
@@ -76,6 +89,7 @@ pub(crate) fn sprite_pixel_for_x(
             };
             let color_idx = extract_colour_index(low_byte, high_byte, bit);
             if color_idx == 0 {
+                eprintln!("[DEBUG sprite_pixel_for_x] color_idx==0: oam_index={oam_index}, x={x}, ly={ly}, sprite_height={sprite_height}, x_pos={x_pos}, y_pos={}, tile_addr={}, vram_offset={}, low_byte={:08b}, high_byte={:08b}, bit={}, attributes={:08b}", sprite.y_position(), tile_addr, vram_offset, low_byte, high_byte, bit, sprite.attributes);
                 continue;
             }
             let color = if ppu.is_cgb {
@@ -88,6 +102,7 @@ pub(crate) fn sprite_pixel_for_x(
                 };
                 Color::from_palette(color_idx, palette)
             };
+            eprintln!("[DEBUG sprite_pixel_for_x] RETURNING: oam_index={oam_index}, x={x}, ly={ly}, sprite_height={sprite_height}, x_pos={x_pos}, y_pos={}, tile_addr={}, vram_offset={}, low_byte={:08b}, high_byte={:08b}, bit={}, color_idx={}, color={:?}, attributes={:08b}", sprite.y_position(), tile_addr, vram_offset, low_byte, high_byte, bit, color_idx, color, sprite.attributes);
             return Some((
                 oam_index,
                 color_idx,
@@ -163,4 +178,298 @@ pub(crate) fn get_bg_priority(buffer: &[u8], idx: usize) -> bool {
     let byte = idx / 8;
     let bit = idx % 8;
     buffer.get(byte).is_some_and(|b| (*b & (1 << bit)) != 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ppu::ppu::Ppu;
+    use pretty_assertions::assert_eq;
+
+    fn dummy_ppu() -> Ppu {
+        Ppu::new()
+    }
+
+    #[test]
+    fn test_collect_visible_sprites_none() {
+        let ppu = dummy_ppu();
+        let sprites = collect_visible_sprites(&ppu, 8);
+        assert!(sprites.iter().all(|s| s.is_none()));
+    }
+
+    #[test]
+    fn test_collect_visible_sprites_some() {
+        let mut ppu = dummy_ppu();
+        // Place a sprite at LY=0, visible
+        ppu.oam[0] = 16; // y_pos = 0
+        ppu.oam[1] = 8; // x_pos = 0
+        ppu.oam[2] = 0; // tile_idx
+        ppu.oam[3] = 0; // attributes
+        ppu.ly = 0;
+        let sprites = collect_visible_sprites(&ppu, 8);
+        assert!(sprites[0].is_some());
+        assert!(sprites[1..].iter().all(|s| s.is_none()));
+    }
+
+    #[test]
+    fn test_collect_visible_sprites_cap() {
+        let mut ppu = dummy_ppu();
+        // Place 12 visible sprites at LY=0
+        for i in 0..12 {
+            let base = i * 4;
+            ppu.oam[base] = 16; // y_pos = 0
+            ppu.oam[base + 1] = 8; // x_pos = 0
+            ppu.oam[base + 2] = 0;
+            ppu.oam[base + 3] = 0;
+        }
+        ppu.ly = 0;
+        let sprites = collect_visible_sprites(&ppu, 8);
+        // Only 10 should be collected
+        assert_eq!(sprites.iter().filter(|s| s.is_some()).count(), 10);
+    }
+
+    #[test]
+    fn test_sprite_pixel_for_x_dmg_and_cgb() {
+        let mut ppu = dummy_ppu();
+        // Enable LCD and sprites
+        use crate::ppu::lcdc::LcdControl;
+        ppu.lcdc =
+            LcdControl::LCD_ENABLE | LcdControl::SPRITE_ENABLE | LcdControl::BG_WINDOW_ENABLE;
+        ppu.obp0 = 0xE4; // Standard DMG palette
+
+        // DMG mode
+        ppu.oam[0] = 16; // y_pos = 0
+        ppu.oam[1] = 8; // x_pos = 0
+        ppu.oam[2] = 0; // tile_idx
+        ppu.oam[3] = 0; // attributes
+        ppu.ly = 0;
+        // Set VRAM so that bit 7 of low_byte is 1 (pixel at x=0)
+        ppu.vram[0] = 0b1000_0000; // low byte: pixel at x=0 is visible
+        ppu.vram[1] = 0x00; // high byte
+        let visible = collect_visible_sprites(&ppu, 8);
+        let result = sprite_pixel_for_x(0, 0, 8, &visible, &ppu);
+        if result.is_none() {
+            eprintln!(
+                "[DMG] result: {:?}, vram[0]={:08b}, vram[1]={:08b}, oam={:?}, lcdc={:?}",
+                result,
+                ppu.vram[0],
+                ppu.vram[1],
+                &ppu.oam[0..4],
+                ppu.lcdc
+            );
+        }
+        assert!(result.is_some());
+
+        // CGB mode, with flipping
+        ppu.is_cgb = true;
+        // Attributes: vbank=1, yflip=true, xflip=true, pal=0
+        ppu.oam[3] = 0b0110_1000;
+
+        // Calculate target VRAM address based on attributes
+        // line = 7 (ly=0, y_pos=0, yflip=true)
+        // tile_addr = 0*16 + 7*2 = 0x0E
+        // vram_offset = 0x2000 (vbank=1)
+        let target_addr = 0x2000 + 0x0E;
+
+        // Set VRAM so that bit 0 of low_byte at target_addr is 1
+        // (pixel at x=0 with x_flip)
+        ppu.vram[target_addr] = 0b0000_0001; // low byte for tile 0, line 7, in VRAM bank 1
+        ppu.vram[target_addr + 1] = 0x00; // high byte
+
+        let visible_cgb = collect_visible_sprites(&ppu, 8);
+        let result_cgb = sprite_pixel_for_x(0, 0, 8, &visible_cgb, &ppu);
+
+        // --- Begin CGB Debug Print ---
+        // Removed debug prints as test now passes
+        // --- End CGB Debug Print ---
+
+        assert!(result_cgb.is_some(), "CGB sprite pixel should be visible");
+    }
+
+    #[test]
+    fn test_sprite_pixel_for_x_color_idx_zero() {
+        let mut ppu = dummy_ppu();
+        ppu.oam[0] = 16; // y_pos = 0
+        ppu.oam[1] = 8; // x_pos = 0
+        ppu.oam[2] = 0; // tile_idx
+        ppu.oam[3] = 0; // attributes
+        ppu.ly = 0;
+        ppu.vram[0] = 0x00; // low byte (color_idx = 0)
+        ppu.vram[1] = 0x00; // high byte
+        let visible = collect_visible_sprites(&ppu, 8);
+        let result = sprite_pixel_for_x(0, 0, 8, &visible, &ppu);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_cgb_palette_bounds() {
+        let mut data = [0u8; 64];
+        data[63] = 0xFF;
+        let c = cgb_bg_color(3, 7, &data);
+        let c2 = cgb_obj_color(3, 7, &data);
+        // Should not panic, should return a Color
+        assert_eq!(c.a, 0xFF);
+        assert_eq!(c2.a, 0xFF);
+    }
+
+    #[test]
+    fn test_cgb_palette_out_of_bounds() {
+        let data = [0u8; 2];
+        // Should not panic, should return a Color with all zeroes except alpha
+        let c = cgb_bg_color(3, 7, unsafe { &*(data.as_ptr() as *const [u8; 64]) });
+        assert_eq!(c.r, 0);
+        assert_eq!(c.a, 0xFF);
+    }
+
+    #[test]
+    fn test_set_get_bg_priority_boundaries() {
+        let mut buffer = [0u8; 2];
+        set_bg_priority(&mut buffer, 15, true);
+        assert!(get_bg_priority(&buffer, 15));
+        set_bg_priority(&mut buffer, 15, false);
+        assert!(!get_bg_priority(&buffer, 15));
+    }
+
+    #[test]
+    fn test_set_get_bg_priority_multiple_bits() {
+        let mut buffer = [0u8; 2];
+        set_bg_priority(&mut buffer, 1, true);
+        set_bg_priority(&mut buffer, 2, true);
+        assert!(get_bg_priority(&buffer, 1));
+        assert!(get_bg_priority(&buffer, 2));
+        set_bg_priority(&mut buffer, 1, false);
+        assert!(!get_bg_priority(&buffer, 1));
+        assert!(get_bg_priority(&buffer, 2));
+    }
+}
+
+#[cfg(test)]
+mod extra_coverage {
+    use super::*;
+    use crate::ppu::ppu::Ppu;
+    use pretty_assertions::assert_eq;
+
+    fn dummy_ppu() -> Ppu {
+        Ppu::new()
+    }
+
+    #[test]
+    fn test_sprite_pixel_for_x_8x16_and_flipping() {
+        let mut ppu = dummy_ppu();
+        ppu.lcdc =
+            crate::ppu::lcdc::LcdControl::LCD_ENABLE | crate::ppu::lcdc::LcdControl::SPRITE_ENABLE;
+        // 8x16 sprite, no flip
+        ppu.oam[0] = 16; // y_pos = 0
+        ppu.oam[1] = 8; // x_pos = 0
+        ppu.oam[2] = 0; // tile_idx
+        ppu.oam[3] = 0; // attributes
+        ppu.ly = 8; // second tile row
+                    // Set VRAM for lower tile
+        ppu.vram[16] = 0b1000_0000; // low byte for tile 1, line 0
+        ppu.vram[17] = 0x00;
+        let visible = collect_visible_sprites(&ppu, 16);
+        let result = sprite_pixel_for_x(0, 8, 16, &visible, &ppu);
+        if result.is_none() {
+            eprintln!(
+                "[8x16] OAM: {:?}, VRAM[16]: {:08b}, VRAM[17]: {:08b}, visible: {:?}",
+                &ppu.oam[0..4],
+                ppu.vram[16],
+                ppu.vram[17],
+                visible
+            );
+        }
+        assert!(result.is_some());
+        // 8x16 sprite, y flip
+        ppu.oam[3] = 0b0100_0000; // y flip
+        ppu.vram[0] = 0b1000_0000; // low byte for tile 1, line 0 (yflip: line=0)
+        let visible = collect_visible_sprites(&ppu, 16);
+        let result = sprite_pixel_for_x(0, 15, 16, &visible, &ppu);
+        if result.is_none() {
+            eprintln!(
+                "[8x16 yflip] OAM: {:?}, VRAM[0]: {:08b}, visible: {:?}",
+                &ppu.oam[0..4],
+                ppu.vram[0],
+                visible
+            );
+        }
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_sprite_pixel_for_x_cgb_all_attributes() {
+        let mut ppu = dummy_ppu();
+        ppu.is_cgb = true;
+        ppu.oam[0] = 16; // y_pos = 0
+        ppu.oam[1] = 8; // x_pos = 0 (x_position = 0)
+        ppu.oam[2] = 0; // tile_idx
+                        // Attributes: vram bank 1, palette 3, x flip, y flip, priority
+        ppu.oam[3] = 0b1110_1111;
+        ppu.ly = 0;
+        let target_addr = 0x2000 + 0x0E;
+        ppu.vram[target_addr] = 0b0000_0001;
+        ppu.vram[target_addr + 1] = 0x00;
+        let visible = collect_visible_sprites(&ppu, 8);
+        let result = sprite_pixel_for_x(0, 0, 8, &visible, &ppu);
+        if result.is_none() {
+            eprintln!(
+                "[CGB attr] OAM: {:?}, VRAM[0x200E]: {:08b}, visible: {:?}",
+                &ppu.oam[0..4],
+                ppu.vram[target_addr],
+                visible
+            );
+        }
+        assert!(result.is_some());
+        let (_idx, _color_idx, _color, _dmg_prio, cgb_prio) = result.unwrap();
+        assert!(cgb_prio); // priority bit set
+    }
+
+    #[test]
+    fn test_bg_priority_buffer_out_of_bounds() {
+        let mut buffer = [0u8; 1];
+        // Should not panic, should be a no-op
+        set_bg_priority(&mut buffer, 100, true);
+        assert!(!get_bg_priority(&buffer, 100));
+    }
+
+    #[test]
+    fn test_overlapping_sprites_oam_priority() {
+        let mut ppu = dummy_ppu();
+        ppu.lcdc =
+            crate::ppu::lcdc::LcdControl::LCD_ENABLE | crate::ppu::lcdc::LcdControl::SPRITE_ENABLE;
+        // Sprite 0 at x=8, Sprite 1 at x=8 (overlap)
+        ppu.oam[0] = 16;
+        ppu.oam[1] = 8;
+        ppu.oam[2] = 0;
+        ppu.oam[3] = 0;
+        ppu.oam[4] = 16;
+        ppu.oam[5] = 8;
+        ppu.oam[6] = 0;
+        ppu.oam[7] = 0;
+        ppu.ly = 0;
+        ppu.vram[0] = 0b1000_0000;
+        ppu.vram[1] = 0x00;
+        let visible = collect_visible_sprites(&ppu, 8);
+        let result = sprite_pixel_for_x(0, 0, 8, &visible, &ppu);
+        assert!(result.is_some());
+        let (idx, _, _, _, _) = result.unwrap();
+        assert_eq!(idx, 0); // Lower OAM index wins
+    }
+
+    #[test]
+    fn test_sprite_pixel_for_x_invalid_vram_palette_indices() {
+        let mut ppu = dummy_ppu();
+        ppu.is_cgb = true;
+        ppu.oam[0] = 16;
+        ppu.oam[1] = 8;
+        ppu.oam[2] = 0;
+        ppu.oam[3] = 0b0000_0111; // palette 7
+        ppu.ly = 0;
+        // No VRAM set, palette data is all zero
+        let visible = collect_visible_sprites(&ppu, 8);
+        let result = sprite_pixel_for_x(0, 0, 8, &visible, &ppu);
+        // Should not panic, should return a Color with alpha=0xFF
+        if let Some((_idx, _color_idx, color, _, _)) = result {
+            assert_eq!(color.a, 0xFF);
+        }
+    }
 }

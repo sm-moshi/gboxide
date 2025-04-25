@@ -4,7 +4,6 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use core_lib::{cpu::CPU, mmu::MMU};
-use std::process;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::EventLoop;

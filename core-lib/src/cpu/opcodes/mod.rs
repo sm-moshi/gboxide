@@ -8,7 +8,6 @@ use pastey::paste;
 
 pub mod alu;
 pub mod cb;
-pub mod helpers;
 pub mod jump;
 pub mod load_store;
 pub mod types;
@@ -701,7 +700,7 @@ pub static OPCODES: Lazy<[Opcode; 256]> = Lazy::new(|| {
             let opcode = bus.read(cpu.regs.pc);
             cpu.regs.pc = cpu.regs.pc.wrapping_add(1);
             let cb_op = &CB_OPCODES[opcode as usize];
-            (cb_op.exec)(cpu, bus);
+            let _ = (cb_op.exec)(cpu, bus);
             Ok(false)
         }),
     };

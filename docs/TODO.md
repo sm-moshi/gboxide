@@ -2,162 +2,144 @@
 
 ## High Priority
 
-### Fix Failing Tests (now 54/54 passing) ✅
+### PPU Fixes and Features
 
-- [x] All timer, MMU, and PPU tests pass; codebase is warning-free and all test code is idiomatic (no `unwrap()`/`expect()`).
+- [ ] Fix failing PPU sprite test (`test_sprite_pixel_for_x_dmg_and_cgb`)
+  - [ ] Verify CGB bit math for x/y flipped sprites
+  - [ ] Ensure correct VRAM byte and bit index are read based on sprite attributes
+  - [ ] Confirm PPU state (LCDC, STAT) allows sprite visibility
+  - [ ] Implement accurate OAM sprite selection (10/line, priority)
+  - [ ] Implement accurate sprite-to-BG priority
+  - [ ] Verify LCD timings and STAT interrupts
+
+### GBC Feature Implementation
+
+- [ ] VRAM Banking (SVBK 0xFF70)
+  - [ ] Implement bank selection (bits 0-2 select bank 1-7)
+  - [ ] Map to 0xD000-0xDFFF range
+- [ ] CGB Palettes
+  - [ ] Implement BCPS/BCPD (0xFF68/9)
+  - [ ] Implement OCPS/OCPD (0xFF6A/B)
+  - [ ] Handle auto-increment
+- [ ] CGB Tile Attributes
+  - [ ] VRAM bank 1 access for BG map attributes
+  - [ ] Implement BG Priority, VFlip, HFlip
+  - [ ] Handle VRAM Bank selection and Palette numbers
+- [ ] HDMA Transfers
+  - [ ] Implement HDMA1-5 registers (0xFF51-5)
+  - [ ] Support General Purpose and H-Blank DMA modes
+- [ ] Double-Speed Mode
+  - [ ] Implement KEY1 register (0xFF4D)
+  - [ ] Handle speed switching
 
 ### Core Components
 
-- [x] Complete interrupt handling system
-  - [x] Implement basic interrupt structure
-  - [x] Add interrupt flags
-  - [x] Implement interrupt vectors
-  - [x] Add timing for interrupt handling
-  - [x] Test interrupt behaviour
-- [x] MBC3 RTC battery-backed persistence
-  - [x] RTC state serialised/deserialised with RAM (Pandocs-compliant)
-  - [x] Fully tested with dedicated RTC persistence test 🦀
-
-- [x] Enhance MMU implementation
-  - [x] Basic memory access
-  - [x] Memory bus trait
-  - [x] Complete banking system
-  - [x] Memory protection
-  - [x] Test memory timing
-  - [x] Echo RAM support
-  - [x] OAM access
-  - [x] Fix DMA implementation
-  - [x] Fix OAM access value handling
-
-- [x] Timer System Completion
-  - [x] Basic timer registers
-  - [x] Cycle counting
-  - [x] DIV register implementation
-  - [x] TIMA counter with overflow
-  - [x] TMA modulo register
-  - [x] TAC control register
-  - [x] Four frequency modes
-  - [x] Timer overflow delay
-  - [x] DIV reset functionality
-  - [x] TAC change handling
-  - [x] Interrupt requests
-  - [x] Fix critical timer edge cases:
-    - [x] Timer increment overflow behavior
-    - [x] Timer overflow delay timing
-    - [x] TAC change increment handling
-  - [x] Add additional edge case tests:
-    - [x] TIMA write during overflow
-    - [x] TMA write during reload
-    - [x] Multiple TAC changes in sequence
-  - [x] Complete timing accuracy verification
-    - [x] Document timing diagrams
-    - [x] Add cycle-accurate test cases
-    - [x] Verify against hardware behaviour
-
-- [x] Code Quality Improvements
-- [x] Fix clippy linting errors
-- [x] Add missing const functions
-- [x] Handle truncation warnings
-- [x] Improve error handling in tests
-- [x] Remove unwrap/expect usage
-- [x] Update to latest dependencies:
-  - [x] thiserror 2.0
-  - [x] tracing 1.63
-  - [x] tracing-subscriber 1.63
-  - [x] tracing-log 1.56
-  - [x] bincode 2.0
-  - [x] clap 4.5
-  - [x] test-case 3.3
-  - [x] proptest 1.6
-  - [x] mockall 0.13
-  - [x] tempfile 3.19
-  - [x] pretty_assertions 1.4.1
-
-- [~] Begin PPU implementation
-  - [x] Set up VRAM structure
-  - [x] Implement tile data reading
-  - [x] Add background rendering
-  - [x] Basic sprite support
-  - [x] Fix sprite rendering colors
-  - [x] Test PPU timing
+- [ ] Serial I/O Implementation
+  - [ ] SB/SC registers
+  - [ ] Clock selection
+  - [ ] Transfer logic
+  - [ ] Serial interrupts
+- [ ] Audio Output
+  - [ ] Integrate cpal
+  - [ ] Buffer management
+  - [ ] Sample rate handling
 
 ## Medium Priority
 
-- [~] Improve test coverage
+### Testing Enhancement
+
+- [ ] Expand Test Coverage
   - [ ] Add blargg test ROMs
-  - [x] Implement mooneye-gb tests
-  - [x] Add memory access tests
-  - [x] Add basic timer tests
-  - [x] Add timer frequency tests
-  - [x] Add timer overflow tests
-  - [x] Add DIV reset tests
-  - [x] Add TAC change tests
-  - [x] Add banking tests
-  - [x] Test CPU timing accuracy
+    - [ ] CPU tests
+    - [ ] Instruction timing
+    - [ ] Memory timing
+    - [ ] OAM bug tests
+  - [ ] Add mooneye-gb tests
+    - [ ] PPU tests
+    - [ ] Timer tests
+    - [ ] Interrupt tests
+    - [ ] MBC tests
+  - [ ] Add property-based tests
+    - [ ] CPU instruction logic
+    - [ ] MMU banking logic
+  - [ ] Add snapshot tests for PPU
+  - [ ] Current coverage targets:
+    - [ ] PPU core (target: >80%, current: 56.15%)
+    - [ ] Sprite system (target: >80%, current: 45.88%)
+    - [ ] Rendering (target: >80%, current: 62.26%)
+    - [ ] PPU modes (target: >80%, current: 61.54%)
 
-- [~] Enhance debugging capabilities
-  - [ ] Add instruction stepping
-  - [ ] Implement breakpoints
-  - [ ] Add memory viewer
-  - [ ] Add register display
+### Debug Features
 
-- [ ] CLI improvements
-  - [ ] Basic ROM loading
-  - [ ] Memory bank support
-  - [ ] Debug output
+- [ ] Debugger Implementation
+  - [ ] Instruction stepping
+  - [ ] Breakpoint system
+  - [ ] Memory viewer/editor
+  - [ ] Register display
+  - [ ] PPU state visualization
+- [ ] CLI Enhancements
   - [ ] Save state support
   - [ ] Debug commands
   - [ ] Performance profiling
 
-## Low Priority
+### Documentation
 
-- [ ] Documentation
-  - [ ] Add architecture overview
-  - [ ] Document memory map
-  - [ ] Document timer system
-  - [ ] Add contribution guide
-  - [ ] Update README
-
-- [~] Build system
-  - [x] Basic cargo workspace
-  - [~] Test infrastructure
-  - [x] Development profiles
-  - [ ] Cross-platform testing
-  - [ ] CI/CD pipeline
-  - [ ] Release automation
+- [ ] Architecture Documentation
+  - [ ] System overview
+  - [ ] Memory map (including GBC)
+  - [ ] PPU internals
+  - [ ] Timer system
+  - [ ] Serial I/O
+- [ ] User/Developer Guides
+  - [ ] Contribution guide
+  - [ ] README updates
+  - [ ] API documentation
 
 ## Completed ✅
 
-- [x] Project structure setup
-- [x] Basic CPU implementation
-- [x] Initial MMU structure
+### Core Systems
+- [x] Most core modules fully audited and compliant
+- [x] CPU implementation complete
+- [x] Memory system (basic) complete
+- [x] Timer system complete and accurate
+- [x] Basic PPU implementation
+- [x] APU system fully audited
+- [x] Cartridge support with MBC1/2/3/5
+- [x] Interrupt handling system
+- [x] Memory bank controllers
+- [x] MBC3 RTC battery-backed persistence
 - [x] Basic CLI frontend
-- [x] Test infrastructure
-- [x] Flag handling verification
-- [x] Memory access testing
-- [x] Echo RAM implementation
-- [x] OAM access support
-- [x] Memory bank controller support
-- [x] Basic timer implementation
-- [x] Development environment setup
+
+### Testing Infrastructure
+- [x] Unit test framework
+- [x] Integration test framework
+- [x] Test ROM support
+- [x] CI/CD pipeline
+- [x] Memory access tests
+- [x] Timer system tests
+- [x] Banking tests
+- [x] CPU timing accuracy tests
+
+### Code Quality
+- [x] Warning-free codebase (except allowed test warnings)
+- [x] Idiomatic test code (no unwrap()/expect())
+- [x] Documentation coverage for completed modules
+- [x] Code formatting and linting
+- [x] Dependency updates
 - [x] Build profile optimization
-- [x] Interrupt system implementation
-- [x] CPU timing accuracy
-- [x] Dependency updates to latest versions
 
-## Test Infrastructure and Coverage 🦀
+## Current Status Notes
 
-- [x] Integration test crate (`tests/`) with macro-based Mooneye GB test harness is now active
-- [x] Error handling and diagnostics use `anyhow`, `tracing`, and `pretty_assertions`
-- [x] MBC3 RTC persistence test: verifies serialisation, deserialisation, and time catch-up after reload 🦀
-- [ ] Add `insta` for snapshot testing
-- [ ] Add `proptest` for property-based testing
-- [ ] Add `criterion` for performance benchmarking
-- [ ] Expand macro to cover all Mooneye GB acceptance and common tests
-- [ ] Implement property-based, snapshot, and performance tests for core logic and integration
-- [ ] Document all new test strategies and patterns in the memory bank and docs
-
-## Notes
-
-- All timer, MMU, and PPU tests now pass. Codebase is warning-free and all test code is idiomatic.
-- Next focus: advanced PPU features and integration. 🦀
+- Most core modules (CPU, MMU, Timer, APU, Cartridge, Interrupts, Bus, Helpers) are fully audited, warning-free, and pass their tests
+- One PPU sprite test is failing, focus is on fixing this and implementing advanced PPU features
+- APU module is fully audited, warning-free, and all tests pass
+- The only remaining warnings are in test-only code and are suppressed with #[allow(dead_code)]
+- Test coverage is good for core modules but needs improvement for PPU
+- Integration test crate with macro-based Mooneye GB test harness is active
+- Error handling uses anyhow, tracing, and pretty_assertions
+- Current focus is on:
+  1. Fixing PPU sprite test
+  2. Implementing advanced PPU features
+  3. Adding GBC support
+  4. Expanding test coverage
+  5. Improving debugging capabilities

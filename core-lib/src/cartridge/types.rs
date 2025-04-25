@@ -19,17 +19,18 @@ pub enum CartridgeType {
         battery: bool,
         rumble: bool,
     },
-    /// HuC1 (Hudson Soft, rare)
+    /// `HuC1` (Hudson Soft, rare)
     HuC1,
-    /// HuC3 (Hudson Soft, rare)
+    /// `HuC3` (Hudson Soft, rare)
     HuC3,
 }
 
 impl CartridgeType {
-    /// Parse a cartridge type from a header byte.
-    pub fn from_u8(value: u8) -> Option<Self> {
+    /// Attempts to create a `CartridgeType` from its header byte (0x147).
+    /// Returns `None` if the byte doesn't correspond to a known type.
+    pub const fn from_u8(value: u8) -> Option<Self> {
         match value {
-            0x00 => Some(Self::RomOnly),
+            0x00 | 0x08 | 0x09 => Some(Self::RomOnly), // Merged identical arms
             0x01 => Some(Self::Mbc1 {
                 ram: false,
                 battery: false,
@@ -47,8 +48,6 @@ impl CartridgeType {
             }),
             0x05 => Some(Self::Mbc2 { battery: false }),
             0x06 => Some(Self::Mbc2 { battery: true }),
-            0x08 => Some(Self::RomOnly), // ROM+RAM (no battery)
-            0x09 => Some(Self::RomOnly), // ROM+RAM+BATTERY
             0x0F => Some(Self::Mbc3 {
                 ram: false,
                 battery: true,
@@ -126,7 +125,8 @@ pub enum RomSize {
 }
 
 impl RomSize {
-    pub fn from_u8(value: u8) -> Option<Self> {
+    /// Attempts to create a `RomSize` from its header byte (0x148).
+    pub const fn from_u8(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(Self::Size32KB),
             0x01 => Some(Self::Size64KB),
@@ -140,7 +140,12 @@ impl RomSize {
             _ => None,
         }
     }
-    pub fn as_bytes(self) -> usize {
+    /// Returns the size in bytes for this ROM size.
+    pub const fn size(self) -> usize {
+        self.as_bytes()
+    }
+    /// Returns the size in bytes.
+    pub const fn as_bytes(self) -> usize {
         match self {
             Self::Size32KB => 32 * 1024,
             Self::Size64KB => 64 * 1024,
@@ -152,10 +157,6 @@ impl RomSize {
             Self::Size4MB => 4 * 1024 * 1024,
             Self::Size8MB => 8 * 1024 * 1024,
         }
-    }
-    /// Returns the size in bytes for this ROM size.
-    pub fn size(self) -> usize {
-        self.as_bytes()
     }
 }
 
@@ -171,7 +172,8 @@ pub enum RamSize {
 }
 
 impl RamSize {
-    pub fn from_u8(value: u8) -> Option<Self> {
+    /// Attempts to create a `RamSize` from its header byte (0x149).
+    pub const fn from_u8(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(Self::None),
             0x01 => Some(Self::Size2KB),
@@ -182,7 +184,12 @@ impl RamSize {
             _ => None,
         }
     }
-    pub fn as_bytes(self) -> usize {
+    /// Returns the size in bytes for this RAM size.
+    pub const fn size(self) -> usize {
+        self.as_bytes()
+    }
+    /// Returns the size in bytes.
+    pub const fn as_bytes(self) -> usize {
         match self {
             Self::None => 0,
             Self::Size2KB => 2 * 1024,
@@ -191,10 +198,6 @@ impl RamSize {
             Self::Size128KB => 128 * 1024,
             Self::Size64KB => 64 * 1024,
         }
-    }
-    /// Returns the size in bytes for this RAM size.
-    pub fn size(self) -> usize {
-        self.as_bytes()
     }
 }
 

@@ -84,3 +84,99 @@ impl Color {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_color_constants() {
+        assert_eq!(
+            Color::WHITE,
+            Color {
+                r: 224,
+                g: 248,
+                b: 208,
+                a: 255
+            }
+        );
+        assert_eq!(
+            Color::LIGHT_GRAY,
+            Color {
+                r: 136,
+                g: 192,
+                b: 112,
+                a: 255
+            }
+        );
+        assert_eq!(
+            Color::DARK_GRAY,
+            Color {
+                r: 52,
+                g: 104,
+                b: 86,
+                a: 255
+            }
+        );
+        assert_eq!(
+            Color::BLACK,
+            Color {
+                r: 8,
+                g: 24,
+                b: 32,
+                a: 255
+            }
+        );
+        assert_eq!(
+            Color::TRANSPARENT,
+            Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0
+            }
+        );
+        assert_eq!(
+            Color::DMG_COLORS,
+            [
+                Color::WHITE,
+                Color::LIGHT_GRAY,
+                Color::DARK_GRAY,
+                Color::BLACK
+            ]
+        );
+    }
+
+    #[test]
+    fn test_new_and_equality() {
+        let c = Color::new(1, 2, 3, 4);
+        assert_eq!(
+            c,
+            Color {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 4
+            }
+        );
+    }
+
+    #[test]
+    fn test_from_palette() {
+        // Palette: 0b11_10_01_00 (0xE4)
+        let palette = 0xE4;
+        assert_eq!(Color::from_palette(0, palette), Color::WHITE);
+        assert_eq!(Color::from_palette(1, palette), Color::LIGHT_GRAY);
+        assert_eq!(Color::from_palette(2, palette), Color::DARK_GRAY);
+        assert_eq!(Color::from_palette(3, palette), Color::BLACK);
+    }
+
+    #[test]
+    fn test_to_rgba32_and_from_rgba32() {
+        let c = Color::new(10, 20, 30, 40);
+        let rgba = c.to_rgba32();
+        let c2 = Color::from_rgba32(rgba);
+        assert_eq!(c, c2);
+    }
+}

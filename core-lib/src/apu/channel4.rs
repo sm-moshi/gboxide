@@ -18,7 +18,7 @@ impl Nr41 {
     pub const fn read_reg(self) -> u8 {
         self.0 & 0x3F
     }
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value & 0x3F;
     }
 }
@@ -46,7 +46,7 @@ impl Nr43 {
     pub const fn read_reg(self) -> u8 {
         self.0
     }
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value;
     }
 }
@@ -67,7 +67,7 @@ impl Nr44 {
     pub const fn read_reg(self) -> u8 {
         self.0 & 0xC0
     }
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value & 0xC0;
     }
 }
@@ -129,7 +129,7 @@ impl Channel4 {
         }
     }
     /// Write a register by offset (0=NR41, 1=NR42, 2=NR43, 3=NR44)
-    pub fn write_reg(&mut self, offset: u8, value: u8) {
+    pub const fn write_reg(&mut self, offset: u8, value: u8) {
         match offset {
             0 => self.nr41.write_reg(value),
             1 => self.nr42.write_reg(value),
@@ -139,7 +139,7 @@ impl Channel4 {
         }
     }
     /// Trigger the channel (reset LFSR and state)
-    pub fn trigger(&mut self) {
+    pub const fn trigger(&mut self) {
         self.lfsr = 0x7FFF; // Hardware: all bits set
         self.sample_timer = 0;
         self.output = 0;
@@ -148,7 +148,7 @@ impl Channel4 {
     }
     /// Clock the LFSR (Linear Feedback Shift Register) for noise generation
     /// Updates the LFSR and output fields according to NR43 (15-bit or 7-bit mode)
-    pub fn clock_lfsr(&mut self) {
+    pub const fn clock_lfsr(&mut self) {
         // XOR bit 0 and bit 1
         let xor = (self.lfsr & 0x01) ^ ((self.lfsr & 0x02) >> 1);
         // Shift right by 1

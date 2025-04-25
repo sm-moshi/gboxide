@@ -23,7 +23,7 @@ impl Envelope {
         (self.volume << 4) | ((self.increasing as u8) << 3) | (self.period & 0x7)
     }
     /// Write a raw u8 value to the envelope register (`NRx2` format)
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.volume = (value >> 4) & 0x0F;
         self.increasing = (value & 0x08) != 0;
         self.period = value & 0x07;

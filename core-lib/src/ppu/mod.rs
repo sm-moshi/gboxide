@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+pub mod render;
+
 #[allow(clippy::module_inception)]
 pub mod ppu;
 pub use ppu::Ppu;
@@ -8,6 +10,8 @@ pub mod color;
 pub use color::Color;
 
 pub mod helpers;
+pub mod ppu_modes;
+pub mod sprite;
 
 /// PPU-related errors
 #[derive(Debug, Error)]

@@ -4,10 +4,6 @@
 //!
 //! Keeping jump/call/return logic separate improves clarity and maintainability.
 
-// use super::types::Opcode;
-// use crate::cpu::CPU;
-// use crate::mmu::MemoryBusTrait;
-
 /// Adds a signed i8 offset to a u16, wrapping as needed (Clippy-compliant).
 pub fn wrapping_add_signed_u16(val: u16, offset: i8) -> u16 {
     u16::try_from((i32::from(val) + i32::from(offset)).wrapping_rem_euclid(1 << 16)).unwrap_or(0)

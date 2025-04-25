@@ -1,3 +1,5 @@
+use crate::helpers::{get_bit, get_bits, set_bit};
+
 #[derive(Debug, Default)]
 pub struct Interrupts {
     /// Interrupt Enable (IE) register at 0xFFFF
@@ -27,7 +29,7 @@ impl Interrupts {
 
     /// Check if any enabled interrupts are pending, regardless of IME
     pub const fn pending_regardless_of_ime(&self) -> bool {
-        (self.ie & self.if_) != 0
+        get_bits(self.ie, self.if_, 0) != 0
     }
 
     /// Check if any enabled interrupts are pending
@@ -42,13 +44,13 @@ impl Interrupts {
         }
 
         let active = self.ie & self.if_;
-        Some(if active & (1 << InterruptFlag::VBlank as u8) != 0 {
+        Some(if get_bit(active, InterruptFlag::VBlank as u8) {
             InterruptFlag::VBlank
-        } else if active & (1 << InterruptFlag::LcdStat as u8) != 0 {
+        } else if get_bit(active, InterruptFlag::LcdStat as u8) {
             InterruptFlag::LcdStat
-        } else if active & (1 << InterruptFlag::Timer as u8) != 0 {
+        } else if get_bit(active, InterruptFlag::Timer as u8) {
             InterruptFlag::Timer
-        } else if active & (1 << InterruptFlag::Serial as u8) != 0 {
+        } else if get_bit(active, InterruptFlag::Serial as u8) {
             InterruptFlag::Serial
         } else {
             InterruptFlag::Joypad
@@ -56,12 +58,12 @@ impl Interrupts {
     }
 
     /// Schedule IME to be enabled after the next instruction
-    pub fn schedule_enable_ime(&mut self) {
+    pub const fn schedule_enable_ime(&mut self) {
         self.ime_scheduled = true;
     }
 
     /// Update IME state (called after each instruction)
-    pub fn update_ime(&mut self) {
+    pub const fn update_ime(&mut self) {
         if self.ime_scheduled {
             self.ime = true;
             self.ime_scheduled = false;
@@ -69,13 +71,13 @@ impl Interrupts {
     }
 
     /// Request an interrupt by setting its flag
-    pub fn request(&mut self, flag: InterruptFlag) {
-        self.if_ |= 1 << flag as u8;
+    pub const fn request(&mut self, flag: InterruptFlag) {
+        self.if_ = set_bit(self.if_, flag as u8, true);
     }
 
     /// Clear an interrupt flag after handling
-    pub fn clear(&mut self, flag: InterruptFlag) {
-        self.if_ &= !(1 << flag as u8);
+    pub const fn clear(&mut self, flag: InterruptFlag) {
+        self.if_ = set_bit(self.if_, flag as u8, false);
     }
 
     /// Get the interrupt vector address for a given interrupt
@@ -97,8 +99,8 @@ impl Interrupts {
 
     /// Write to the Interrupt Flag (IF) register
     /// Only lower 5 bits can be written
-    pub fn write_if(&mut self, value: u8) {
-        self.if_ = value & 0x1F;
+    pub const fn write_if(&mut self, value: u8) {
+        self.if_ = get_bits(value, 0x1F, 0);
     }
 
     /// Read the Interrupt Enable (IE) register
@@ -109,34 +111,34 @@ impl Interrupts {
 
     /// Write to the Interrupt Enable (IE) register
     /// Only lower 5 bits can be written
-    pub fn write_ie(&mut self, value: u8) {
-        self.ie = value & 0x1F;
+    pub const fn write_ie(&mut self, value: u8) {
+        self.ie = get_bits(value, 0x1F, 0);
     }
 
     /// Disable interrupts immediately
-    pub fn disable_ime(&mut self) {
+    pub const fn disable_ime(&mut self) {
         self.ime = false;
         self.ime_scheduled = false;
     }
 
     #[cfg(test)]
-    pub fn set_ie(&mut self, value: u8) {
-        self.ie = value & 0x1F;
+    pub const fn set_ie(&mut self, value: u8) {
+        self.ie = get_bits(value, 0x1F, 0);
     }
 
     #[cfg(test)]
-    pub fn set_if(&mut self, value: u8) {
-        self.if_ = value & 0x1F;
+    pub const fn set_if(&mut self, value: u8) {
+        self.if_ = get_bits(value, 0x1F, 0);
     }
 
     #[cfg(test)]
-    pub fn set_ime(&mut self, value: bool) {
+    pub const fn set_ime(&mut self, value: bool) {
         self.ime = value;
     }
 
     #[cfg(test)]
-    pub fn enable(&mut self, flag: InterruptFlag) {
-        self.ie |= 1 << flag as u8;
+    pub const fn enable(&mut self, flag: InterruptFlag) {
+        self.ie = set_bit(self.ie, flag as u8, true);
     }
 }
 

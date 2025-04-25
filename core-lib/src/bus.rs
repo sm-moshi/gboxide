@@ -32,7 +32,7 @@ pub struct Bus<'a> {
 }
 
 impl<'a> Bus<'a> {
-    pub fn new(mmu: &'a mut MMU) -> Self {
+    pub const fn new(mmu: &'a mut MMU) -> Self {
         Self { mmu }
     }
 }

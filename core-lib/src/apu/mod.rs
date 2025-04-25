@@ -20,6 +20,7 @@ pub use flags::*;
 pub use sweep::*;
 pub use wave_duty::*;
 
+use crate::helpers::{get_bit, get_bits, set_bit, set_bits};
 use channel3::Channel3;
 use channel4::Channel4;
 
@@ -125,7 +126,7 @@ impl Nr10 {
         self.0
     }
     /// Write a register by offset (0=NR10)
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value;
     }
 }
@@ -143,7 +144,7 @@ impl Nr11 {
         self.0
     }
     /// Write a register by offset (0=NR11)
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value;
     }
 }
@@ -161,7 +162,7 @@ impl Nr12 {
         self.0
     }
     /// Write a register by offset (0=NR12)
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value;
     }
 }
@@ -179,7 +180,7 @@ impl Nr14 {
         self.0
     }
     /// Write a register by offset (0=NR14)
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value;
     }
 }
@@ -205,7 +206,7 @@ impl Channel1 {
             3 => self.nr13 = value,
             4 => {
                 self.nr14.write_reg(value);
-                if value & 0x80 != 0 {
+                if get_bit(value, 7) {
                     self.trigger();
                 }
             }
@@ -223,31 +224,31 @@ impl Channel1 {
         // 1. Enable the channel
         self.enabled = true;
         // 2. If length counter is zero, set to 64 - (NR11 length bits 0-5)
-        let length_bits = self.nr11.0 & 0x3F; // bits 0-5
+        let length_bits = get_bits(self.nr11.0, 0x3F, 0); // bits 0-5
         if self.length_counter == 0 {
             let len = 64u8.saturating_sub(length_bits);
             self.length_counter = if len == 0 { 64 } else { len };
         }
         // 3. Envelope: set volume and timer
         // Initial volume: bits 4-7 of NR12
-        self.envelope_volume = (self.nr12.0 >> 4) & 0x0F;
+        self.envelope_volume = get_bits(self.nr12.0, 0x0F, 4);
         // Envelope period: bits 0-2 of NR12
-        let period = self.nr12.0 & 0x07;
+        let period = get_bits(self.nr12.0, 0x07, 0);
         self.envelope_timer = if period == 0 { 8 } else { period };
         // 4. Sweep: set state from NR10 and current frequency
         // Sweep period: bits 4-6 of NR10
-        self.sweep.period = (self.nr10.0 >> 4) & 0x07;
+        self.sweep.period = get_bits(self.nr10.0, 0x07, 4);
         // Sweep negate: bit 3 of NR10 (0 = increase, 1 = decrease)
-        self.sweep.negate = (self.nr10.0 & 0x08) == 0;
+        self.sweep.negate = !get_bit(self.nr10.0, 3);
         // Sweep shift: bits 0-2 of NR10
-        self.sweep.shift = self.nr10.0 & 0x07;
+        self.sweep.shift = get_bits(self.nr10.0, 0x07, 0);
         self.sweep.timer = if self.sweep.period == 0 {
             8
         } else {
             self.sweep.period
         };
         // Shadow frequency is the current 11-bit frequency
-        let freq = ((u16::from(self.nr14.0 & 0x07)) << 8) | u16::from(self.nr13);
+        let freq = ((u16::from(get_bits(self.nr14.0, 0x07, 0))) << 8) | u16::from(self.nr13);
         self.sweep.shadow_freq = freq;
         // Sweep enabled if period or shift is nonzero
         self.sweep.enabled = self.sweep.period != 0 || self.sweep.shift != 0;
@@ -265,38 +266,39 @@ impl Channel1 {
         }
         // (Frequency timer reset is handled elsewhere if needed)
     }
-    /// Tick the length counter (frame sequencer steps 0,2,4,6)
-    /// This disables the channel when the length counter reaches zero, as per hardware.
-    pub fn tick_length(&mut self) {
-        if self.nr14.0 & 0x40 != 0 && self.length_counter > 0 {
+    /// Step the length counter (if enabled)
+    /// Set enabled to false if length expires
+    pub const fn tick_length(&mut self) {
+        if get_bit(self.nr14.0, 6) && self.length_counter > 0 {
             self.length_counter -= 1;
             if self.length_counter == 0 {
                 self.enabled = false;
             }
         }
     }
-    /// Tick the envelope (frame sequencer step 7)
-    /// This updates the envelope volume according to the envelope period and direction.
-    pub fn tick_envelope(&mut self) {
-        let period = self.nr12.0 & 0x07;
+    /// Step the envelope (if enabled)
+    /// Modifies `envelope_volume` based on envelope settings
+    pub const fn tick_envelope(&mut self) {
+        let period = get_bits(self.nr12.0, 0x07, 0);
         if period != 0 {
             if self.envelope_timer > 0 {
                 self.envelope_timer -= 1;
             }
             if self.envelope_timer == 0 {
                 self.envelope_timer = period;
-                let direction = (self.nr12.0 & 0x08) != 0;
-                if direction && self.envelope_volume < 0x0F {
+                // Only change volume if not already at min/max
+                if self.envelope_volume < 15 && get_bit(self.nr12.0, 3) {
+                    // Increasing (bit 3 set)
                     self.envelope_volume += 1;
-                } else if !direction && self.envelope_volume > 0 {
+                } else if self.envelope_volume > 0 && !get_bit(self.nr12.0, 3) {
+                    // Decreasing (bit 3 clear)
                     self.envelope_volume -= 1;
                 }
             }
         }
     }
-    /// Tick the sweep unit (frame sequencer steps 2,6)
-    /// This clocks the sweep logic, updating frequency and disabling the channel on overflow.
-    pub fn tick_sweep(&mut self) {
+    /// Step the sweep (updates frequency and enabled state)
+    pub const fn tick_sweep(&mut self) {
         self.sweep.clock();
         // If sweep disables itself, also disable the channel
         if !self.sweep.enabled {
@@ -324,13 +326,17 @@ impl Envelope {
     }
     /// Read the envelope register as a raw u8 (NR22 format)
     pub const fn read_reg(&self) -> u8 {
-        (self.volume << 4) | (if self.increasing { 1 << 3 } else { 0 }) | (self.period & 0x07)
+        let mut v = 0u8;
+        v = set_bits(v, 0x0F, 4, self.volume);
+        v = set_bit(v, 3, self.increasing);
+        v = set_bits(v, 0x07, 0, self.period);
+        v
     }
     /// Write a raw u8 value to the envelope register (NR22 format)
-    pub fn write_reg(&mut self, value: u8) {
-        self.volume = (value >> 4) & 0x0F;
-        self.increasing = (value & 0x08) != 0;
-        self.period = value & 0x07;
+    pub const fn write_reg(&mut self, value: u8) {
+        self.volume = get_bits(value, 0x0F, 4);
+        self.increasing = get_bit(value, 3);
+        self.period = get_bits(value, 0x07, 0);
     }
 }
 
@@ -381,7 +387,7 @@ impl Nr21 {
         self.0
     }
     /// Write a register by offset (0=NR21)
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value;
     }
 }
@@ -398,7 +404,7 @@ impl Nr24 {
         self.0
     }
     /// Write a register by offset (0=NR24)
-    pub fn write_reg(&mut self, value: u8) {
+    pub const fn write_reg(&mut self, value: u8) {
         self.0 = value;
     }
 }
@@ -415,7 +421,7 @@ impl Channel2 {
         }
     }
     /// Write a register by offset (0=NR21, 1=NR22, 2=NR23, 3=NR24)
-    pub fn write_reg(&mut self, offset: u8, value: u8) {
+    pub const fn write_reg(&mut self, offset: u8, value: u8) {
         match offset {
             0 => self.nr21.write_reg(value),
             1 => self.nr22.write_reg(value),
@@ -424,28 +430,32 @@ impl Channel2 {
             _ => {}
         }
     }
-    /// Tick the length counter (frame sequencer steps 0,2,4,6)
-    pub fn tick_length(&mut self) {
-        if self.nr24.0 & 0x40 != 0 && self.length_counter > 0 {
+    /// Step the length counter (if enabled)
+    /// Set enabled to false if length expires
+    pub const fn tick_length(&mut self) {
+        if get_bit(self.nr24.0, 6) && self.length_counter > 0 {
             self.length_counter -= 1;
             if self.length_counter == 0 {
                 self.enabled = false;
             }
         }
     }
-    /// Tick the envelope (frame sequencer step 7)
-    pub fn tick_envelope(&mut self) {
-        let period = self.nr22.period;
+    /// Step the envelope (if enabled)
+    /// Modifies `envelope_volume` based on envelope settings
+    pub const fn tick_envelope(&mut self) {
+        let period = get_bits(self.nr22.period, 0x07, 0);
         if period != 0 {
             if self.envelope_timer > 0 {
                 self.envelope_timer -= 1;
             }
             if self.envelope_timer == 0 {
                 self.envelope_timer = period;
-                let direction = self.nr22.increasing;
-                if direction && self.envelope_volume < 0x0F {
+                // Only change volume if not already at min/max
+                if self.envelope_volume < 15 && self.nr22.increasing {
+                    // Increasing (bit 3 set)
                     self.envelope_volume += 1;
-                } else if !direction && self.envelope_volume > 0 {
+                } else if self.envelope_volume > 0 && !self.nr22.increasing {
+                    // Decreasing (bit 3 clear)
                     self.envelope_volume -= 1;
                 }
             }
@@ -590,7 +600,7 @@ impl Apu {
 
 impl Channel3 {
     /// Tick the length counter (frame sequencer steps 0,2,4,6)
-    pub fn tick_length(&mut self) {
+    pub const fn tick_length(&mut self) {
         if self.nr34.length_enable() && self.length_counter > 0 {
             self.length_counter -= 1;
             if self.length_counter == 0 {
@@ -602,8 +612,8 @@ impl Channel3 {
 
 impl Channel4 {
     /// Tick the length counter (frame sequencer steps 0,2,4,6)
-    pub fn tick_length(&mut self) {
-        if self.nr44.0 & 0x40 != 0 && self.length_counter > 0 {
+    pub const fn tick_length(&mut self) {
+        if get_bit(self.nr44.0, 6) && self.length_counter > 0 {
             self.length_counter -= 1;
             if self.length_counter == 0 {
                 self.dac_enabled = false;
@@ -611,7 +621,7 @@ impl Channel4 {
         }
     }
     /// Tick the envelope (frame sequencer step 7)
-    pub fn tick_envelope(&mut self) {
+    pub const fn tick_envelope(&mut self) {
         let period = self.nr42.period;
         if period != 0 {
             if self.envelope_timer > 0 {

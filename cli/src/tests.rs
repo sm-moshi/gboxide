@@ -1,8 +1,6 @@
+#![allow(clippy::unwrap_used)]
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
-use std::io::Write;
-use std::path::Path;
 use tempfile::NamedTempFile;
 
 // Move verify_cli from main.rs
@@ -194,8 +192,6 @@ fn help_for_test_subcommand() {
 
 #[cfg(test)]
 mod main_coverage {
-    use super::*;
-    use std::fs::File;
     use std::io::Write;
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
@@ -312,7 +308,6 @@ mod main_coverage {
 
 #[cfg(test)]
 mod emulator_app_key_mapping {
-    use super::*;
     use crate::EmulatorApp;
     use winit::keyboard::{Key, NamedKey};
 

@@ -25,7 +25,7 @@ fn integration_cpu_mmu_basic_rom_execution() -> Result<()> {
         if opcode == 0x76 {
             break;
         }
-        cpu.step(&mut mmu);
+        let _ = cpu.step(&mut mmu);
         steps += 1;
         assert!(steps <= 10, "CPU did not halt as expected");
     }
