@@ -296,3 +296,60 @@ fn test_dma_register_read() -> Result<()> {
     assert_eq!(mmu.read(0xFF46), 0x42);
     Ok(())
 }
+
+#[test]
+fn test_invalid_memory_access() {
+    let mut mmu = create_test_mmu().unwrap();
+    // Use a valid u16 out-of-bounds address (e.g., 0xF000 is outside mapped regions for most MBCs)
+    let result = mmu.write(0xF000, 0x42);
+    assert!(result.is_err() || result.is_ok()); // Accept either, but should not panic
+}
+
+#[test]
+fn test_serial_registers() -> Result<()> {
+    let mut mmu = create_test_mmu()?;
+    // Write to serial data register (0xFF01)
+    let _ = mmu.write(0xFF01, 0xAB);
+    assert_eq!(mmu.read(0xFF01), 0xAB);
+    // Write to serial control register (0xFF02)
+    let _ = mmu.write(0xFF02, 0xCD);
+    assert_eq!(mmu.read(0xFF02), 0xCD);
+    Ok(())
+}
+
+#[test]
+fn test_mmu_trait_object_usage() -> Result<()> {
+    let mut mmu = create_test_mmu()?;
+    let bus: &mut dyn crate::mmu::MemoryBusTrait = &mut mmu;
+    let _ = bus.write(0xC000, 0x55);
+    assert_eq!(bus.read(0xC000), 0x55);
+    Ok(())
+}
+
+#[test]
+fn test_memory_region_edges() -> Result<()> {
+    let mut mmu = create_test_mmu()?;
+    // VRAM edge
+    let _ = mmu.write(0x9FFF, 0x11);
+    assert_eq!(mmu.read(0x9FFF), 0x11);
+    // WRAM edge
+    let _ = mmu.write(0xDFFF, 0x22);
+    assert_eq!(mmu.read(0xDFFF), 0x22);
+    // OAM edge
+    mmu.ppu.set_mode(crate::ppu::PpuMode::HBlank);
+    let _ = mmu.write(0xFE9F, 0x33);
+    assert_eq!(mmu.read(0xFE9F), 0x33);
+    // HRAM edge
+    let _ = mmu.write(0xFFFE, 0x44);
+    assert_eq!(mmu.read(0xFFFE), 0x44);
+    Ok(())
+}
+
+#[test]
+fn test_mbc_error_variant() {
+    use crate::mmu::mbc::MbcError;
+    let err = MbcError::InvalidRomBank(42);
+    assert_eq!(format!("{}", err), "Invalid ROM bank number: 42");
+    let err2 = MbcError::InvalidRamBank(3);
+    assert_eq!(format!("{}", err2), "Invalid RAM bank number: 3");
+}

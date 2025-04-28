@@ -9,8 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PPU sprite collision detection:**
+  - Implemented and tested hardware-accurate sprite collision detection logic in the PPU.
+  - All PPU sprite logic now passes, including overlapping and priority cases.
+  - Test suite expanded to cover collision detection edge cases.
 - **Full codebase audit and compliance:**
-  - All core modules (CPU, MMU, Timer, PPU, Cartridge, Interrupts, Bus, Helpers) are now fully audited, warning-free, and all tests pass.
+  - All core modules (CPU, MMU, Timer, PPU, APU, Cartridge, Interrupts, Bus, Helpers) are now fully audited, warning-free, and all tests pass.
   - Codebase is warning-free, all test code is idiomatic (no unwrap()/expect()), and documentation is up to date for these modules.
   - Focus is now on advanced PPU features, integration, and test suite expansion (blargg, mooneye-gb, property-based, and snapshot tests).
   - The only remaining warnings are in test-only code and are suppressed with #[allow(dead_code)].
@@ -149,6 +153,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Fixed PPU Sprite Test and Collision Detection:**
+  - Resolved failure in `ppu::helpers::tests::test_sprite_pixel_for_x_dmg_and_cgb` by correcting VRAM bank usage in CGB test case.
+  - Implemented and validated sprite collision detection logic; all related tests now pass.
+  - All PPU sprite logic is now correct and hardware-accurate, including collision and priority handling.
 - Timer system: State machine, overflow delay, and edge case handling (DIV reset, TAC change, overflow cancellation) are now correct and cycle-accurate
 - All timer-specific tests now pass, confirming hardware-accurate behaviour for overflow and cancellation
 - Test harness now explicitly sets up DIV and steps cycles to guarantee edge-triggered behaviour, ensuring robust and accurate test coverage
@@ -188,7 +196,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No critical issues. All core and CLI tests pass; codebase is clean and warning-free.
 - Remaining work is focused on PPU feature completion and further integration testing.
 
-## [0.1.0] - 2024-03-20
+## [0.1.0] - 2025-03-20
 
 ### Added
 

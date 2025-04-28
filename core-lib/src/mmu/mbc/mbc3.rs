@@ -313,3 +313,184 @@ impl Mbc for Mbc3 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    fn dummy_rom(size: usize) -> Vec<u8> {
+        let mut rom = vec![0u8; size];
+        for (i, chunk) in rom.chunks_mut(0x4000).enumerate() {
+            for b in chunk.iter_mut() {
+                *b = i as u8;
+            }
+        }
+        rom
+    }
+
+    #[test]
+    fn test_rom_bank_switching() {
+        let rom = dummy_rom(0x4000 * 4); // 4 banks
+        let mut mbc = Mbc3::new(rom);
+        // Default bank is 1
+        assert_eq!(mbc.rom_bank(), 1);
+        // Write 0 to ROM bank register, should map to 1
+        mbc.write(0x2000, 0x00).unwrap();
+        assert_eq!(mbc.rom_bank(), 1);
+        // Write 2 to ROM bank register
+        mbc.write(0x2000, 0x02).unwrap();
+        assert_eq!(mbc.rom_bank(), 2);
+        // Write out-of-range value (0x80), should map to 1 for a 4-bank ROM (hardware quirk)
+        mbc.write(0x2000, 0x80).unwrap();
+        assert_eq!(
+            mbc.rom_bank(),
+            1,
+            "For a 4-bank ROM, out-of-range bank numbers map to 1 as per hardware behaviour"
+        );
+    }
+
+    #[test]
+    fn test_ram_enable_disable() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc3::new(rom);
+        // RAM disabled by default
+        assert!(!mbc.is_ram_enabled());
+        // Enable RAM
+        mbc.write(0x0000, 0x0A).unwrap();
+        assert!(mbc.is_ram_enabled());
+        // Disable RAM
+        mbc.write(0x0000, 0x00).unwrap();
+        assert!(!mbc.is_ram_enabled());
+        // Write other value disables RAM
+        mbc.write(0x0000, 0x05).unwrap();
+        assert!(!mbc.is_ram_enabled());
+    }
+
+    #[test]
+    fn test_ram_bank_and_rtc_select() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc3::new(rom);
+        // Select RAM bank 2
+        mbc.write(0x4000, 0x02).unwrap();
+        assert_eq!(mbc.ram_bank(), 2);
+        // Select RTC register 0x0A
+        mbc.write(0x4000, 0x0A).unwrap();
+        assert_eq!(mbc.ram_bank(), 0x0A);
+    }
+
+    #[test]
+    fn test_rtc_latch_sequence() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc3::new(rom);
+        // Latch should only occur on 0->1 transition
+        mbc.write(0x6000, 0x00).unwrap();
+        let before = mbc.rtc_latch.seconds;
+        mbc.write(0x6000, 0x01).unwrap();
+        let after = mbc.rtc_latch.seconds;
+        // Should have latched (may be equal if no time elapsed)
+        assert_eq!(before, after);
+        // Repeated 1 should not re-latch
+        mbc.write(0x6000, 0x01).unwrap();
+        // Latch state should remain 1
+        assert_eq!(mbc.latch_state, 1);
+    }
+
+    #[test]
+    fn test_rtc_register_read_write() {
+        let mut rtc = Rtc::new();
+        rtc.write_reg(0x08, 59); // seconds
+        rtc.write_reg(0x09, 59); // minutes
+        rtc.write_reg(0x0A, 23); // hours
+        rtc.write_reg(0x0B, 0xFF); // days low
+        rtc.write_reg(0x0C, 0xC1); // day high, halt, carry
+        assert_eq!(rtc.read_reg(0x08), 59);
+        assert_eq!(rtc.read_reg(0x09), 59);
+        assert_eq!(rtc.read_reg(0x0A), 23);
+        assert_eq!(rtc.read_reg(0x0B), 0xFF);
+        assert_eq!(rtc.read_reg(0x0C) & 0x01, 1); // day 8
+        assert!(rtc.read_reg(0x0C) & 0x40 != 0); // halt
+        assert!(rtc.read_reg(0x0C) & 0x80 != 0); // carry
+    }
+
+    #[test]
+    fn test_rtc_serialisation_deserialisation() {
+        let mut rtc = Rtc::new();
+        rtc.seconds = 12;
+        rtc.minutes = 34;
+        rtc.hours = 23;
+        rtc.days = 511;
+        rtc.halt = true;
+        rtc.carry = true;
+        rtc.last_update = SystemTime::UNIX_EPOCH + Duration::from_secs(123456);
+        let bytes = rtc.to_bytes();
+        let rtc2 = Rtc::from_bytes(&bytes);
+        assert_eq!(rtc2.seconds, 12);
+        assert_eq!(rtc2.minutes, 34);
+        assert_eq!(rtc2.hours, 23);
+        assert_eq!(rtc2.days, 511);
+        assert!(rtc2.halt);
+        assert!(rtc2.carry);
+        assert_eq!(rtc2.last_update, rtc.last_update);
+    }
+
+    #[test]
+    fn test_ram_and_rtc_access_errors() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc3::new(rom);
+        // RAM disabled
+        let result = mbc.read(0xA000);
+        assert!(matches!(result, Err(MbcError::RamDisabled)));
+        // Enable RAM, select invalid RAM bank
+        mbc.write(0x0000, 0x0A).unwrap();
+        mbc.write(0x4000, 0x04).unwrap();
+        let result = mbc.read(0xA000);
+        assert!(matches!(result, Err(MbcError::InvalidRamBank(4))));
+        // Select RTC register, but out of range
+        mbc.write(0x4000, 0x0D).unwrap();
+        let result = mbc.read(0xA000);
+        assert!(matches!(result, Err(MbcError::InvalidRamBank(0x0D))));
+    }
+
+    #[test]
+    fn test_save_and_load_ram() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc3::new(rom);
+        mbc.write(0x0000, 0x0A).unwrap(); // Enable RAM
+        mbc.write(0xA000, 0x42).unwrap();
+        let saved = mbc.save_ram();
+        // Overwrite RAM and reload
+        let mut mbc2 = Mbc3::new(dummy_rom(0x8000));
+        mbc2.load_ram(saved.clone()).unwrap();
+        mbc2.write(0x0000, 0x0A).unwrap();
+        assert_eq!(mbc2.read(0xA000).unwrap(), 0x42);
+        // Test with wrong size
+        let result = mbc2.load_ram(vec![0u8; 1]);
+        assert!(matches!(result, Err(MbcError::InvalidRamBank(_))));
+    }
+
+    #[test]
+    fn test_protection_violation() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc3::new(rom);
+        let result = mbc.read(0xC000);
+        assert!(matches!(result, Err(MbcError::ProtectionViolation(_))));
+        let result = mbc.write(0xC000, 0x01);
+        assert!(matches!(result, Err(MbcError::ProtectionViolation(_))));
+    }
+
+    #[test]
+    fn test_bank_switching_during_access() {
+        let rom = dummy_rom(0x4000 * 8);
+        let mut mbc = Mbc3::new(rom);
+        mbc.write(0x0000, 0x0A).unwrap(); // Enable RAM
+        mbc.write(0x4000, 0x00).unwrap(); // RAM bank 0
+        mbc.write(0xA000, 0x11).unwrap();
+        mbc.write(0x4000, 0x01).unwrap(); // RAM bank 1
+        mbc.write(0xA000, 0x22).unwrap();
+        mbc.write(0x4000, 0x00).unwrap(); // Switch back
+        assert_eq!(mbc.read(0xA000).unwrap(), 0x11);
+        mbc.write(0x4000, 0x01).unwrap();
+        assert_eq!(mbc.read(0xA000).unwrap(), 0x22);
+    }
+}

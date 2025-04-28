@@ -98,3 +98,119 @@ impl Mbc for Mbc2 {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_rom(size: usize) -> Vec<u8> {
+        let mut rom = vec![0u8; size];
+        for (i, chunk) in rom.chunks_mut(0x4000).enumerate() {
+            for b in chunk.iter_mut() {
+                *b = i as u8;
+            }
+        }
+        rom
+    }
+
+    #[test]
+    fn test_rom_read_bank0_and_switchable() {
+        let rom = dummy_rom(0x8000); // 2 banks
+        let mbc = Mbc2::new(rom.clone());
+        // Bank 0
+        assert_eq!(mbc.read(0x0000).unwrap(), 0);
+        assert_eq!(mbc.read(0x3FFF).unwrap(), 0);
+        // Switchable bank (default 1)
+        assert_eq!(mbc.read(0x4000).unwrap(), 1);
+        assert_eq!(mbc.read(0x7FFF).unwrap(), 1);
+        // Out of bounds
+        let mbc = Mbc2::new(vec![0u8; 0x4000]); // Only 1 bank
+        assert_eq!(mbc.read(0x4000).unwrap(), 0xFF);
+    }
+
+    #[test]
+    fn test_rom_bank_switching() {
+        let rom = dummy_rom(0x4000 * 4); // 4 banks
+        let mut mbc = Mbc2::new(rom);
+        // Write to ROM bank register (should select bank 2)
+        mbc.write(0x2100, 0x02).unwrap();
+        assert_eq!(mbc.rom_bank, 2);
+        // Bank 0 is forbidden, should map to 1
+        mbc.write(0x2100, 0x00).unwrap();
+        assert_eq!(mbc.rom_bank, 1);
+    }
+
+    #[test]
+    fn test_ram_enable_disable() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc2::new(rom);
+        // RAM disabled by default
+        assert!(!mbc.ram_enabled);
+        // Enable RAM
+        mbc.write(0x0000, 0x0A).unwrap();
+        assert!(mbc.ram_enabled);
+        // Disable RAM
+        mbc.write(0x0000, 0x00).unwrap();
+        assert!(!mbc.ram_enabled);
+        // Write to non-RAM-enable address (should not change state, should error)
+        let result = mbc.write(0x0100, 0x0A);
+        assert!(matches!(result, Err(MbcError::ProtectionViolation(0x0100))));
+        assert!(!mbc.ram_enabled);
+    }
+
+    #[test]
+    fn test_ram_write_and_read_nibble_masking() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc2::new(rom);
+        mbc.write(0x0000, 0x0A).unwrap(); // Enable RAM
+                                          // Write value with upper nibble set
+        mbc.write(0xA000, 0xAB).unwrap();
+        // Only lower nibble should be stored, upper nibble should be open bus (0xF0)
+        let val = mbc.read(0xA000).unwrap();
+        assert_eq!(val & 0x0F, 0x0B);
+        assert_eq!(val & 0xF0, 0xF0);
+    }
+
+    #[test]
+    fn test_ram_disabled_error() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc2::new(rom);
+        let result = mbc.write(0xA000, 0x01);
+        assert!(matches!(result, Err(MbcError::RamDisabled)));
+        let result = mbc.read(0xA000);
+        assert!(matches!(result, Err(MbcError::RamDisabled)));
+    }
+
+    #[test]
+    fn test_protection_violation_error() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc2::new(rom);
+        let result = mbc.write(0xC000, 0x01);
+        assert!(matches!(result, Err(MbcError::ProtectionViolation(_))));
+        let result = mbc.read(0xC000);
+        assert!(matches!(result, Err(MbcError::ProtectionViolation(_))));
+    }
+
+    #[test]
+    fn test_load_ram_wrong_size() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc2::new(rom);
+        let result = mbc.load_ram(vec![0u8; 256]);
+        assert!(matches!(result, Err(MbcError::InvalidRamBank(_))));
+    }
+
+    #[test]
+    fn test_save_and_load_ram_success() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc2::new(rom);
+        mbc.write(0x0000, 0x0A).unwrap(); // Enable RAM
+        mbc.write(0xA000, 0x05).unwrap();
+        let saved = mbc.save_ram();
+        assert_eq!(saved[0], 0x05);
+        // Overwrite RAM and reload
+        let mut mbc2 = Mbc2::new(dummy_rom(0x8000));
+        mbc2.load_ram(saved.clone()).unwrap();
+        mbc2.write(0x0000, 0x0A).unwrap(); // Enable RAM
+        assert_eq!(mbc2.read(0xA000).unwrap() & 0x0F, 0x05);
+    }
+}

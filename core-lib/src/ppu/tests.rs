@@ -226,3 +226,58 @@ fn test_dma_transfer() {
         assert_eq!(ppu.oam[i], 0x42);
     }
 }
+
+#[test]
+fn test_sprite_collision_detection() {
+    let mut ppu = Ppu::new();
+    ppu.set_collision_tracking(true);
+    ppu.lcdc = LcdControl::LCD_ENABLE | LcdControl::SPRITE_ENABLE | LcdControl::BG_WINDOW_ENABLE;
+    // Sprite 0 at (16,16), tile 0
+    ppu.oam[0] = 16; // Y
+    ppu.oam[1] = 16; // X
+    ppu.oam[2] = 0; // Tile
+    ppu.oam[3] = 0; // Attr
+                    // Sprite 1 at (16,16), tile 0, overlaps with sprite 0
+    ppu.oam[4] = 16; // Y
+    ppu.oam[5] = 16; // X
+    ppu.oam[6] = 0; // Tile
+    ppu.oam[7] = 0; // Attr
+                    // Set up tile data for both sprites (non-transparent for all lines)
+    for i in 0..16 {
+        ppu.vram[i] = 0xFF;
+    }
+    ppu.ly = 0;
+    // --- Perform OAM scan manually ---
+    let sprite_height = 8;
+    ppu.oam_scan_result =
+        crate::ppu::sprite::collect_visible_sprites(&ppu.oam, ppu.ly, sprite_height);
+    // --- Call renderer directly ---
+    let renderer = super::render::Renderer;
+    renderer.render_sprites(&mut ppu);
+    // Print OAM scan result for debugging
+    println!("OAM scan result:");
+    for (i, sprite_opt) in ppu.oam_scan_result.sprites.iter().enumerate() {
+        if let Some(sprite) = sprite_opt {
+            println!(
+                "  OAM index {}: x={}, y={}, tile={}, attr={:02X}",
+                i, sprite.x_pos, sprite.y_pos, sprite.tile_idx, sprite.attributes
+            );
+        }
+    }
+    let collisions = ppu.take_sprite_collisions();
+    assert!(!collisions.is_empty(), "No collisions detected");
+    // There should be collisions at X=8..15
+    let mut found = false;
+    for (ly, x, indices) in &collisions {
+        if *ly == 0
+            && (8..16).contains(x)
+            && indices.len() == 2
+            && indices.contains(&0)
+            && indices.contains(&1)
+        {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "No collision found at X=8..15 with both sprites");
+}

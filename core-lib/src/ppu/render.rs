@@ -78,7 +78,7 @@ impl Renderer {
             } else {
                 0
             };
-            let tile_line = u16::from(tile_y_offset);
+            let tile_line = tile_y_offset;
             let tile_line_addr = tile_addr + tile_line * 2;
             let tile_line_addr_usize = usize::from(tile_line_addr);
             let tile_data_low = ppu.vram[vram_offset + tile_line_addr_usize];
@@ -157,7 +157,7 @@ impl Renderer {
 
             // In CGB mode, always use the 8000 addressing mode (unsigned)
             let tile_addr = if ppu.is_cgb {
-                (tile_id as u16) * 16
+                u16::from(tile_id) * 16
             } else {
                 tile_data_address(tiledata_base, tile_id, signed)
             };
@@ -210,8 +210,8 @@ impl Renderer {
     /// Hardware-accurate priority rules:
     /// - DMG: Sprite priority bit (bit 7) set means sprite is behind BG unless BG colour is 0 (white).
     /// - CGB: BG priority bit (from BG tile attr) set means sprite is only drawn if BG colour is 0 (white).
-    ///        Otherwise, CGB OBJ priority bit (attr bit 7) controls if sprite is drawn over BG (false = in front).
-    ///        Lower OAM index always wins for overlapping sprites.
+    /// Otherwise, CGB OBJ priority bit (attr bit 7) controls if sprite is drawn over BG (false = in front).
+    /// Lower OAM index always wins for overlapping sprites.
     pub fn render_sprites(&self, ppu: &mut Ppu) {
         if !ppu.lcdc.contains(LcdControl::SPRITE_ENABLE) {
             return;
@@ -221,8 +221,59 @@ impl Renderer {
         } else {
             8
         };
+        // For each pixel, collect all OAM indices that would draw a non-transparent pixel
         for x in 0..SCREEN_WIDTH {
-            if let Some((_, _color_idx, color, dmg_priority, cgb_priority)) =
+            let mut contributors = Vec::new();
+            for (oam_index, sprite_opt) in ppu.oam_scan_result.sprites.iter().enumerate() {
+                let Some(sprite) = sprite_opt else { continue };
+                let x_pos = sprite.x_position();
+                if x_pos <= (x as i32) && (x as i32) < (x_pos + 8) {
+                    // Calculate which line of the sprite this is
+                    let mut line =
+                        u8::try_from(i32::from(ppu.ly) - sprite.y_position()).unwrap_or(0);
+                    let y_flip = sprite.is_y_flipped();
+                    if y_flip {
+                        let max_line = if sprite_height == 16 { 15 } else { 7 };
+                        line = max_line - line;
+                    }
+                    let tile_addr = if sprite_height == 16 {
+                        (u16::from(sprite.tile_idx & 0xFE) * 16) + u16::from(line & 0xF) * 2
+                    } else {
+                        u16::from(sprite.tile_idx) * 16 + u16::from(line) * 2
+                    };
+                    let vram_offset = if ppu.is_cgb && (sprite.attributes & 0x08) != 0 {
+                        0x2000
+                    } else {
+                        0
+                    };
+                    let low_addr = vram_offset + tile_addr as usize;
+                    let high_addr = vram_offset + (tile_addr + 1) as usize;
+                    let low_byte = ppu.vram[low_addr];
+                    let high_byte = ppu.vram[high_addr];
+                    let screen_x = x as i32 - x_pos;
+                    let x_flip = sprite.is_x_flipped();
+                    let bit = if x_flip {
+                        u8::try_from(screen_x).unwrap_or(0)
+                    } else {
+                        7 - u8::try_from(screen_x).unwrap_or(0)
+                    };
+                    let color_idx = extract_colour_index(low_byte, high_byte, bit);
+                    if color_idx != 0 {
+                        contributors.push(oam_index);
+                    }
+                }
+            }
+            // Print contributors for X=8..15 for debugging
+            if (8..16).contains(&x) {
+                println!("[DEBUG] x={} contributors={:?}", x, contributors);
+            }
+            if contributors.len() > 1 {
+                ppu.record_sprite_collision(ppu.ly, x as u8, contributors.clone());
+            }
+        }
+        // Now do the normal rendering (topmost sprite drawn)
+        for x in 0..SCREEN_WIDTH {
+            if let Some((oam_index, _color_idx, color, dmg_priority, cgb_priority)) =
                 super::sprite::sprite_pixel_for_x(
                     x,
                     ppu.ly,
@@ -244,19 +295,16 @@ impl Renderer {
                     false
                 };
                 if ppu.is_cgb {
-                    // CGB: BG priority bit set means sprite only drawn if BG is white (colour 0)
                     if bg_priority {
                         if bg_is_white {
                             ppu.frame_buffer[pixel_index] = color;
                         }
                     } else {
-                        // CGB OBJ priority: false = in front, true = behind BG (unless BG is white)
                         if !cgb_priority || bg_is_white {
                             ppu.frame_buffer[pixel_index] = color;
                         }
                     }
                 } else {
-                    // DMG: Sprite priority bit false = in front, true = behind BG (unless BG is white)
                     if !dmg_priority || bg_is_white {
                         ppu.frame_buffer[pixel_index] = color;
                     }

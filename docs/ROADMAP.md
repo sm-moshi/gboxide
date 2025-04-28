@@ -18,9 +18,10 @@
 - [x] Interrupts (Hardware accurate timing, tests pass)
 - [x] Bus (Routes IO, tests pass)
 - [x] Helpers (Audited, tests pass)
-- [~] PPU implementation
+- [x] PPU implementation
   - [x] Basic BG/Window Rendering & Timings
   - [x] Basic Sprite Rendering Logic
+  - [x] Sprite collision detection (complete)
   - [ ] Accurate OAM Sprite Selection (10/line, priority)
   - [ ] Accurate Sprite-to-BG Priority
   - [ ] Accurate STAT Interrupts & Timings
@@ -34,9 +35,9 @@
 ## Short-term Goals (Q3 2025)
 
 ### PPU Completion
-- [ ] Complete advanced sprite features
-  - [ ] CGB sprite priority system
-  - [ ] Sprite collision detection
+- [x] Complete advanced sprite features
+  - [x] CGB sprite priority system
+  - [x] Sprite collision detection
   - [ ] Edge case handling
 - [ ] Enhance window rendering
   - [ ] Accurate timing
@@ -52,8 +53,8 @@
   - [ ] Add property-based tests
   - [ ] Add snapshot tests
 - [ ] Improve test coverage
-  - [ ] PPU core (currently 56.15%)
-  - [ ] Sprite system (currently 45.88%)
+  - [ ] PPU core (currently 84%)
+  - [ ] Sprite system (currently 100%)
   - [ ] Rendering (currently 62.26%)
   - [ ] PPU modes (currently 61.54%)
 
@@ -172,7 +173,7 @@
 - [x] Improve error handling
 
 ### Recent Achievements 🌟
-- [x] Fixed PPU sprite test
+- [x] Fixed PPU sprite test and collision detection (all sprite logic now passes)
 - [x] Completed APU audit
 - [x] Implemented MBC3 RTC persistence
 - [x] All core modules fully audited

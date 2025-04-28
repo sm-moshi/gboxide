@@ -53,6 +53,10 @@ pub struct Ppu {
     pub is_cgb: bool, // True if running in CGB mode
     // Per-pixel BG priority buffer for CGB (bitfield, 1 bit per pixel)
     bg_priority_buffer: Box<[u8]>,
+    /// Sprite collision info: (scanline, x, Vec<OAM indices>)
+    sprite_collisions: Vec<(u8, u8, Vec<usize>)>,
+    /// Enable/disable collision tracking (for debug/perf)
+    pub collision_tracking: bool,
 }
 
 impl Default for Ppu {
@@ -85,6 +89,8 @@ impl Default for Ppu {
             is_cgb: false,
             bg_priority_buffer: vec![0; (SCREEN_WIDTH * SCREEN_HEIGHT).div_ceil(8)]
                 .into_boxed_slice(),
+            sprite_collisions: Vec::new(),
+            collision_tracking: false,
         }
     }
 }
@@ -458,5 +464,22 @@ impl Ppu {
 
     pub(crate) fn bg_priority_buffer_mut(&mut self) -> &mut [u8] {
         &mut self.bg_priority_buffer
+    }
+
+    /// Record a sprite collision at (ly, x) with the given OAM indices
+    pub(crate) fn record_sprite_collision(&mut self, ly: u8, x: u8, indices: Vec<usize>) {
+        if self.collision_tracking {
+            self.sprite_collisions.push((ly, x, indices));
+        }
+    }
+
+    /// Get and clear all sprite collisions (for tests/debug)
+    pub fn take_sprite_collisions(&mut self) -> Vec<(u8, u8, Vec<usize>)> {
+        std::mem::take(&mut self.sprite_collisions)
+    }
+
+    /// Enable or disable collision tracking
+    pub fn set_collision_tracking(&mut self, enabled: bool) {
+        self.collision_tracking = enabled;
     }
 }

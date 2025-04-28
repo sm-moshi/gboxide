@@ -11,6 +11,7 @@ pub struct Mbc1 {
     ram_bank: u8,
     mode: u8,
     rom_mask: usize,
+    ram_base_offset: usize, // Precomputed RAM base offset for current bank
 }
 
 impl Mbc1 {
@@ -29,6 +30,7 @@ impl Mbc1 {
             ram_bank: 0,
             mode: 0,
             rom_mask: rom_addr_mask,
+            ram_base_offset: 0, // Start at bank 0
         }
     }
     const fn current_rom_bank(&self) -> usize {
@@ -44,6 +46,12 @@ impl Mbc1 {
         } else {
             self.ram_bank as usize
         }
+    }
+    fn update_ram_base_offset(&mut self) {
+        // Always called after ram_bank or mode changes
+        let bank = self.current_ram_bank();
+        debug_assert!(bank * 0x2000 < self.ram.len(), "RAM bank out of bounds");
+        self.ram_base_offset = bank * 0x2000;
     }
 }
 
@@ -71,9 +79,10 @@ impl Mbc for Mbc1 {
                 if !self.ram_enabled {
                     return Err(MbcError::RamDisabled);
                 }
-                let bank = self.current_ram_bank();
-                let idx = bank * 0x2000 + (addr as usize - 0xA000);
-                Ok(self.ram.get(idx).copied().unwrap_or(0xFF))
+                let idx = self.ram_base_offset + (addr as usize - 0xA000);
+                debug_assert!(idx < self.ram.len(), "RAM access out of bounds");
+                // SAFETY: idx is always valid due to masking and precomputed offset
+                Ok(unsafe { *self.ram.get_unchecked(idx) })
             }
             _ => Err(MbcError::ProtectionViolation(addr)),
         }
@@ -101,12 +110,14 @@ impl Mbc for Mbc1 {
                     self.rom_bank_high = value;
                 } else {
                     self.ram_bank = value;
+                    self.update_ram_base_offset();
                 }
                 Ok(())
             }
             // Banking Mode Select
             0x6000..=0x7FFF => {
                 self.mode = value & 0x01;
+                self.update_ram_base_offset();
                 Ok(())
             }
             // RAM Bank Write
@@ -114,14 +125,13 @@ impl Mbc for Mbc1 {
                 if !self.ram_enabled {
                     return Err(MbcError::RamDisabled);
                 }
-                let bank = self.current_ram_bank();
-                let idx = bank * 0x2000 + (addr as usize - 0xA000);
-                if idx < self.ram.len() {
-                    self.ram[idx] = value;
-                    Ok(())
-                } else {
-                    Err(MbcError::InvalidRamBank(bank))
+                let idx = self.ram_base_offset + (addr as usize - 0xA000);
+                debug_assert!(idx < self.ram.len(), "RAM write out of bounds");
+                // SAFETY: idx is always valid due to masking and precomputed offset
+                unsafe {
+                    *self.ram.get_unchecked_mut(idx) = value;
                 }
+                Ok(())
             }
             _ => Err(MbcError::ProtectionViolation(addr)),
         }
@@ -144,5 +154,74 @@ impl Mbc for Mbc1 {
         }
         self.ram = data;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_rom(size: usize) -> Vec<u8> {
+        let mut rom = vec![0u8; size];
+        // Fill each bank with a unique value for identification
+        for (i, chunk) in rom.chunks_mut(0x4000).enumerate() {
+            for b in chunk.iter_mut() {
+                *b = i as u8;
+            }
+        }
+        rom
+    }
+
+    #[test]
+    fn test_ram_disabled_error() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc1::new(rom);
+        // RAM is disabled by default
+        let result = mbc.write(0xA000, 0x42);
+        assert!(matches!(result, Err(MbcError::RamDisabled)));
+    }
+
+    #[test]
+    fn test_protection_violation_error() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc1::new(rom);
+        // Access address outside valid range
+        let result = mbc.write(0xF000, 0x12);
+        assert!(matches!(result, Err(MbcError::ProtectionViolation(_))));
+    }
+
+    #[test]
+    fn test_load_ram_wrong_size() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc1::new(rom);
+        // Try to load RAM with wrong size
+        let result = mbc.load_ram(vec![0u8; 0x1000]);
+        assert!(matches!(result, Err(MbcError::InvalidRamBank(_))));
+    }
+
+    #[test]
+    fn test_rom_bank_zero_maps_to_one() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc1::new(rom);
+        // Set ROM bank to 0 (should map to 1)
+        mbc.write(0x2000, 0x00).unwrap();
+        assert_eq!(mbc.current_rom_bank(), 1);
+    }
+
+    #[test]
+    fn test_mode_switching_and_ram_bank() {
+        let rom = dummy_rom(0x8000);
+        let mut mbc = Mbc1::new(rom);
+        // Enable RAM
+        mbc.write(0x0000, 0x0A).unwrap();
+        // Set mode 1 (RAM banking)
+        mbc.write(0x6000, 0x01).unwrap();
+        // Set RAM bank to 1
+        mbc.write(0x4000, 0x01).unwrap();
+        assert_eq!(mbc.current_ram_bank(), 1);
+        // Set mode 0 (ROM banking)
+        mbc.write(0x6000, 0x00).unwrap();
+        // RAM bank should be 0 in mode 0
+        assert_eq!(mbc.current_ram_bank(), 0);
     }
 }

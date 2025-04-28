@@ -292,21 +292,21 @@ impl CPU {
         (opcodes::OPCODES[opcode as usize].exec)(self, bus)
     }
 
-    pub fn set_reg_a(&mut self, value: u8) {
+    pub const fn set_reg_a(&mut self, value: u8) {
         self.regs.a = value;
     }
 
-    pub fn set_flags(&mut self, value: u8) {
+    pub const fn set_flags(&mut self, value: u8) {
         self.regs.f = value;
     }
 
-    pub fn get_flags(&self) -> u8 {
+    pub const fn get_flags(&self) -> u8 {
         self.regs.f
     }
 
-    pub fn enable_interrupts(&mut self) -> bool {
+    pub const fn enable_interrupts(&mut self) -> bool {
         self.ime = true;
-        return false;
+        false
     }
 
     pub fn handle_interrupts(&mut self, mmu: &mut dyn MemoryBusTrait) -> bool {
@@ -437,5 +437,123 @@ mod unit {
         let result = cpu.execute(0xFF, &mut ErrorBus);
         // Should be Ok or Err depending on opcode table, but test that it returns anyhow::Result
         assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_cpu_reset() {
+        let mut cpu = CPU::new();
+        cpu.regs.a = 0x12;
+        cpu.ime = true;
+        cpu.halted = true;
+        cpu.stopped = true;
+        cpu.cycles = 1234;
+        cpu.current_cycles = 56;
+        cpu.reset();
+        assert_eq!(cpu.regs.a, 0);
+        assert!(!cpu.ime);
+        assert!(!cpu.halted);
+        assert!(!cpu.stopped);
+        assert_eq!(cpu.cycles, 0);
+        assert_eq!(cpu.current_cycles, 0);
+    }
+
+    #[test]
+    fn test_set_reg_a_and_flags_accessors() {
+        let mut cpu = CPU::new();
+        cpu.set_reg_a(0xAB);
+        assert_eq!(cpu.regs.a, 0xAB);
+        cpu.set_flags(0xF0);
+        assert_eq!(cpu.get_flags(), 0xF0);
+    }
+
+    #[test]
+    fn test_enable_interrupts_and_handle_interrupts() {
+        let mut cpu = CPU::new();
+        assert!(!cpu.ime);
+        let result = cpu.enable_interrupts();
+        assert!(!result); // always returns false
+        assert!(cpu.ime);
+        let mut mmu = crate::mmu::MMU::new(vec![0; 0x8000]).unwrap();
+        let result = cpu.handle_interrupts(&mut mmu);
+        assert!(!result); // always returns false
+    }
+
+    #[test]
+    fn test_step_interrupt_handling() {
+        struct InterruptBus {
+            interrupt: Option<crate::interrupts::InterruptFlag>,
+            cleared: bool,
+        }
+        impl MemoryBusTrait for InterruptBus {
+            fn read(&self, _addr: u16) -> u8 {
+                0x00
+            }
+            fn write(&mut self, _addr: u16, _val: u8) -> Result<(), crate::mmu::MmuError> {
+                Ok(())
+            }
+            fn get_interrupt(&self) -> Option<crate::interrupts::InterruptFlag> {
+                self.interrupt
+            }
+            fn clear_interrupt(&mut self, _interrupt: crate::interrupts::InterruptFlag) {
+                self.cleared = true;
+            }
+            fn get_interrupt_vector(&self, _interrupt: crate::interrupts::InterruptFlag) -> u16 {
+                0x1234
+            }
+            fn as_any(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+            fn interrupts_mut(&self) -> Option<&RefCell<crate::interrupts::Interrupts>> {
+                None
+            }
+        }
+        let mut cpu = CPU::new();
+        let mut bus = InterruptBus {
+            interrupt: Some(crate::interrupts::InterruptFlag::VBlank),
+            cleared: false,
+        };
+        cpu.ime = true;
+        cpu.regs.sp = 0xFFFE;
+        cpu.regs.pc = 0x1000;
+        let cycles = cpu.step(&mut bus).unwrap();
+        assert_eq!(cycles, 20);
+        assert_eq!(cpu.regs.pc, 0x1234);
+        assert!(bus.cleared);
+        assert!(!cpu.ime);
+    }
+
+    #[test]
+    fn test_step_halted_and_stopped() {
+        struct DummyBus;
+        impl MemoryBusTrait for DummyBus {
+            fn read(&self, _addr: u16) -> u8 {
+                0x00
+            }
+            fn write(&mut self, _addr: u16, _val: u8) -> Result<(), crate::mmu::MmuError> {
+                Ok(())
+            }
+            fn get_interrupt(&self) -> Option<crate::interrupts::InterruptFlag> {
+                None
+            }
+            fn clear_interrupt(&mut self, _interrupt: crate::interrupts::InterruptFlag) {}
+            fn get_interrupt_vector(&self, _interrupt: crate::interrupts::InterruptFlag) -> u16 {
+                0
+            }
+            fn as_any(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+            fn interrupts_mut(&self) -> Option<&RefCell<crate::interrupts::Interrupts>> {
+                None
+            }
+        }
+        let mut cpu = CPU::new();
+        let mut bus = DummyBus;
+        cpu.halted = true;
+        let cycles = cpu.step(&mut bus).unwrap();
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.get_current_cycles(), 4);
+        cpu.halted = false;
+        cpu.stopped = true; // Should not affect step logic, but test for coverage
+        let _ = cpu.step(&mut bus);
     }
 }
